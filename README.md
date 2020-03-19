@@ -1,3 +1,3 @@
 # drafts
 
-Each branch on this repository contains some draft.
+Each branch on this repository contains some different unrelated draft.
