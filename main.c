@@ -80,7 +80,7 @@ int main(void) {
 	char *data = (char*)malloc(X*Y*4);
 
 	FILE* f = fopen("img.bin", "rb");
-	fread(data, 1, X*Y*4, f);
+	int n = fread(data, 1, X*Y*4, f);
 	fclose(f);
 
 	XImage *img = XCreateImage(d,vinfo.visual,vinfo.depth,ZPixmap,0,data,X,Y,32,0);

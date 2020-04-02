@@ -5,12 +5,16 @@
                         "label": "gcc build active file",
                         "command": "/usr/bin/gcc",
                         "args": [
-                                "-g",
-                                "${file}",
+				//"-g", "-O0",
+				"-Os",
+				"-fdata-sections",
+				"-ffunction-sections",
+				"-Wl,--gc-sections",
+                                "${workspaceFolder}/main.c",
 				"-lX11",
 				"-I.",
 				"-o",
-                                "${fileDirname}/${fileBasenameNoExtension}"
+                                "${workspaceFolder}/main"
                         ],
                         "options": {
                                 "cwd": "/usr/bin"
