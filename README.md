@@ -79,7 +79,7 @@ uint8_t *out_shmem_alloc(struct nrf_rpc_tr_remote_ep *ep, size_t size)
 	// get first available blocks
 	size_t free_index = MASK_CTZ(sh_mask);
 	// create bit mask with blocks that will be used
-	mask_t mask = ((blocks == MEM_BLOCKS) ? ~(mask_t)0 : ((1 << blocks) - 1)) << free_index;
+	mask_t mask = ((blocks == MEM_BLOCKS) ? ~(mask_t)0 : (((mask_t)1 << blocks) - 1)) << free_index;
 	// update masks
 	free_mask ^= mask;
 	endpoint_mask[addr] = mask;
