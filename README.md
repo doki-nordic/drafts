@@ -130,6 +130,8 @@ int in_shmem_recv(struct nrf_rpc_tr_local_ep *ep, uint8_t **buf)
 
 	if (index > SLOT_STATE_MAX) {
 		return -EAGAIN;
+	} else if (index > MEM_OUT_ALLOCABLE - 4) {
+		return -EIO;
 	}
 
 	uint32_t *mem_start = (uint32_t *)&in_allocable[index];
