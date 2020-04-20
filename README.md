@@ -156,3 +156,105 @@ void in_shmem_consume(struct nrf_rpc_tr_local_ep *ep)
 
 
 ```
+
+1. Improvement if OS does not allow sending bytes with the signals.
+
+2. Draft of handshake during initialization.
+
+```c++
+
+#define OUT_REGION_SIZE_TOTAL 1024
+#define OUT_REGION_SIZE_SLOTS (4 * OUT_ENDPOINTS)
+#if defined(NRF_RPC_OS_SIGNALS_WITH_DATA)
+#	define OUT_REGION_MIN_SIZE_QUEUE 0
+#else
+#	define OUT_REGION_MIN_SIZE_QUEUE (8 + (OUT_ENDPOINTS + IN_ENDPOINTS + 1))
+#endif
+#define OUT_REGION_SIZE_ALLOCABLE (((OUT_REGION_SIZE_TOTAL - OUT_REGION_SIZE_SLOTS - OUT_REGION_MIN_SIZE_QUEUE) / ALLOCABLE_MULTIPLY) * ALLOCABLE_MULTIPLY)
+#define OUT_REGION_SIZE_QUEUE (OUT_REGION_SIZE_TOTAL - OUT_REGION_SIZE_ALLOCABLE - OUT_REGION_SIZE_SLOTS)
+#define OUT_QUEUE_ITEMS (OUT_REGION_SIZE_QUEUE - 8)
+
+static uint8_t *const out_region_allocable = (uint8_t *)shmem_ptr;
+static uint32_t *const out_region_slots = (uint32_t *)out_region_allocable[OUT_REGION_SIZE_ALLOCABLE];
+static uint32_t *const out_region_queue_tx = (uint32_t *)out_region_allocable[OUT_REGION_SIZE_ALLOCABLE + OUT_REGION_SIZE_SLOTS];
+static uint32_t *const out_region_queue_rx = (uint32_t *)out_region_allocable[OUT_REGION_SIZE_ALLOCABLE + OUT_REGION_SIZE_SLOTS + 4];
+static uint8_t *const out_region_queue = (uint8_t *)out_region_allocable[OUT_REGION_SIZE_ALLOCABLE + OUT_REGION_SIZE_SLOTS + 8];
+
+#if !defined(NRF_RPC_OS_SIGNALS_WITH_DATA)
+
+int nrf_rpc_os_signal_with_data(uint8_t data) {
+	uint32_t tx = *out_region_queue_tx;
+	uint32_t rx = *out_region_queue_rx;
+	uint32_t dst = tx;
+
+	tx++;
+	if (tx >= OUT_QUEUE_ITEMS) {
+		tx = 0;
+	}
+
+	if (tx == rx || dst >= OUT_QUEUE_ITEMS) {
+		return -ENOMEM;
+	}
+
+	out_region_queue[dst] = data;
+	NRF_RPC_OS_MEMORY_BARIER();
+	*out_region_queue_tx = tx;
+
+	return nrf_rpc_os_signal();
+}
+
+int nrf_rpc_os_signal_data_get()
+{
+	uint32_t tx = *in_region_queue_tx;
+	uint32_t rx = *in_region_queue_rx;
+	uint8_t data;
+
+	if (tx == rx || rx >= IN_QUEUE_ITEMS) {
+		return -ENOENT;
+	}
+
+	data = in_region_queue[rx];
+
+	rx++;
+	if (rx >= IN_QUEUE_ITEMS) {
+		rx = 0;
+	}
+
+	NRF_RPC_OS_MEMORY_BARIER();
+	*in_region_queue_rx = rx;
+
+	return data;
+}
+
+#endif
+
+/* Handshake steps:
+ * 1. out_slot = INIT
+ * 2. wait for in_slot = INIT
+ * 3. initialize shared memory
+ * 4. out_slot = CONFIRM
+ * 5. wait for in_slot = CONFIRM
+ * 6. out_slot = EMPTY
+ * 7. wait for in_slot = EMPTY
+ */
+
+#define SLOT_HANDSHAKE_INIT 0xFFFFFFF0
+#define SLOT_HANDSHAKE_CONFIRM 0xFFFFFFF1
+
+static void handshake_set_and_wait(uitn32_t state)
+{
+	out_region_slots[0] = state;
+	do {
+		// TODO: wait for signal with timeout
+	} while (in_region_slots[0] != state);
+}
+
+static void handshake()
+{
+	handshake_set_and_wait(SLOT_HANDSHAKE_INIT);
+	// TODO: initialize output shared memory
+	handshake_set_and_wait(SLOT_HANDSHAKE_CONFIRM);
+	handshake_set_and_wait(SLOT_EMPTY);
+}
+
+```
