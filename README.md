@@ -244,9 +244,10 @@ int nrf_rpc_os_signal_data_get()
 static void handshake_set_and_wait(uitn32_t state)
 {
 	out_region_slots[0] = state;
-	do {
+	while (in_region_slots[0] != state) {
 		// TODO: wait for signal with timeout
-	} while (in_region_slots[0] != state);
+		NRF_RPC_OS_MEMORY_BARIER();
+	}
 }
 
 static void handshake()
