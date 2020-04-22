@@ -9,15 +9,14 @@ let totalTime = 0;
 let lastUpdate = Date.now();
 let countingState = true;
 let startup = true;
+let ignoreLock = false;
 
-function log(counting, text, optional)
-{
+function log(counting, text, optional) {
 	let fd;
 	let fileWriteStart;
 	let newLineCode = '\n'.charCodeAt(0);
 
-	function openAndGetLastLine()
-	{
+	function openAndGetLastLine() {
 		fd = fs.openSync(file, 'r+');
 		let fileSize = fs.fstatSync(fd).size;
 		let arrBuf = new ArrayBuffer(256);
@@ -108,7 +107,11 @@ monitor.stdout.on('data', (data) => {
 			changingState = true;
 		} else if (changingState && (m = line.match(/boolean\s+(true|false)/i))) {
 			let value = (m[1].toLowerCase() == 'true');
-			log(!value, `Lock Screen ${value ? 'On' : 'Off'}`);
+			if (ignoreLock) {
+				log(null, `Ignored Lock Screen ${value ? 'On' : 'Off'}`);
+			} else {
+				log(!value, `Lock Screen ${value ? 'On' : 'Off'}`);
+			}
 			changingState = false;
 		} else {
 			changingState = false;
@@ -127,6 +130,32 @@ monitor.on('close', (code) => {
 
 log(null, `Keep alive`, true);
 
-setInterval(()=>{
+setInterval(() => {
 	log(null, `Keep alive`, true);
 }, 10 * 1000);
+
+
+
+var stdin = process.stdin;
+
+// without this, we would only get streams once enter is pressed
+stdin.setRawMode(true);
+
+// resume stdin in the parent process (node app won't quit all by itself
+// unless an error or process.exit() happens)
+stdin.resume();
+
+// i don't want binary, do you?
+stdin.setEncoding('utf8');
+
+// on any data into stdin
+stdin.on('data', function (key) {
+	// ctrl-c ( end of text )
+	if (key === '\u0003') {
+		process.exit();
+	}
+	if (key == ' ') {
+		ignoreLock = !ignoreLock;
+		log(null, ignoreLock ? `Ignoring Screen Locks: On` : `Ignoring Screen Locks: Off`, false);
+	}
+});
