@@ -77,12 +77,22 @@ function log(counting, text, optional) {
 	countingState = counting;
 
 	let h = Math.round(totalTime / 1000);
+	let lh = h - 7.5 * 60 * 60;
+
 	let s = pad2(h % 60);
 	h = Math.floor(h / 60);
 	let m = pad2(h % 60);
 	h = pad2(Math.floor(h / 60));
+
+	let sign = lh > 0 ? '+' : '-';
+	lh = Math.abs(lh);
+	let ls = pad2(lh % 60);
+	lh = Math.floor(lh / 60);
+	let lm = pad2(lh % 60);
+	lh = pad2(Math.floor(lh / 60));
+
 	let outputLine = `${time}    ${h}:${m}:${s}    ${countingState ? 'Y' : 'N'}    ${text}${optional ? '' : '\n'}`;
-	let consoleLine = `\r${time}    ${h}:${m}:${s}    ${countingState ? 'Y' : 'N'}    ${optional ? '' : text}${optional ? '' : '\n'}                      `;
+	let consoleLine = `\r${time}    ${h}:${m}:${s}    ${sign}${lh}:${lm}:${ls}    ${countingState ? 'Y' : 'N'}    ${optional ? '' : text}${optional ? '' : '\n'}                      `;
 
 	process.stdout.write(consoleLine);
 
