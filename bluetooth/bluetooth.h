@@ -1358,9 +1358,10 @@ struct bt_bond_info {
  *  @param func       Function to call for each bond.
  *  @param user_data  Data to pass to the callback function.
  */
-void bt_foreach_bond(uint8_t id, void (*func)(const struct bt_bond_info *info,
-					   void *user_data),
-		     void *user_data);
+typedef void (*bt_foreach_bond_func_t)(const struct bt_bond_info *info,
+				       void *user_data);
+
+void bt_foreach_bond(uint8_t id, bt_foreach_bond_func_t func, void *user_data);
 
 /**
  * @}

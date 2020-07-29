@@ -19,26 +19,34 @@
 #define _SERIALIZE_SIZE_PARAM(param, size_param) "__SERIALIZE__:SIZE_PARAM=" #param "`" #size_param
 #define _SERIALIZE_SIZE_PARAM_EX(param, size_pattern, size_param) "__SERIALIZE__:SIZE_PARAM_EX=" #param "`" #size_pattern "`" #size_param
 #define _SERIALIZE_NULLABLE(param) "__SERIALIZE__:NULLABLE=" #param
-#define _SERIALIZE_STRUCT_BUFFER_CONST(num) "__SERIALIZE__:STRUCT_BUFFER_CONST=" #num
+#define _SERIALIZE_STRUCT_INLINE(field) "__SERIALIZE__:STRUCT_INLINE=" #field
+#define _SERIALIZE_CALLBACK(type) "__SERIALIZE__:CALLBACK=" #type
+#define _SERIALIZE_STRUCT(type) "__SERIALIZE__:STRUCT=" #type
+#define _SERIALIZE_CUSTOM_STRUCT(type) "__SERIALIZE__:CUSTOM_STRUCT=" #type
 
 
-#define _SERIALIZE_GROUP(group) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:GROUP=" #group
-#define _SERIALIZE_CMD_ID(prefix, postfix) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:CMD_ID=" #prefix "$" #postfix
-#define _SERIALIZE_EVT_ID(prefix, postfix) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:EVT_ID=" #prefix "$" #postfix
-#define _SERIALIZE_FUNC(name) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:FUNC=" #name
-#define _SERIALIZE_CLI_FILE(file) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:CLI_FILE=" file
-#define _SERIALIZE_HOST_FILE(file) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:HOST_FILE=" file
-#define _SERIALIZE_RAW_STRUCT(type) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:RAW_STRUCT=" #type
-#define _SERIALIZE_STRUCT(type) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:STRUCT=" #type
-#define _SERIALIZE_OPAQUE_STRUCT(type) const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:OPAQUE_STRUCT=" #type
+#define _SERIALIZE_GROUP(group) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:GROUP=" #group
+#define _SERIALIZE_CMD_ID(prefix, postfix) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:CMD_ID=" #prefix "$" #postfix
+#define _SERIALIZE_EVT_ID(prefix, postfix) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:EVT_ID=" #prefix "$" #postfix
+#define _SERIALIZE_FUNC(name) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:FUNC=" #name
+#define _SERIALIZE_CLI_FILE(file) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:CLI_FILE=" file
+#define _SERIALIZE_HOST_FILE(file) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:HOST_FILE=" file
+#define _SERIALIZE_RAW_STRUCT(type) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:RAW_STRUCT=" #type
+#define _SERIALIZE_OPAQUE_STRUCT(type) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:OPAQUE_STRUCT=" #type
+#define _SERIALIZE_STRUCT_BUFFER_CONST(enc, num) static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:STRUCT_BUFFER_CONST=" #enc "`" #num
 
 
 #define SERIALIZE(...) _SERIALIZE_ ## __VA_ARGS__
 
-//#include "nrf_rpc.h"
+#include "nrf_rpc.h"
+#include "nrf_rpc_cbor.h"
 
 #undef NRF_RPC_CBOR_CMD_DECODER
-#define NRF_RPC_CBOR_CMD_DECODER(grp, name, id, handler, param) \
-	const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:REGISTER_DECODER=" #handler
+#define NRF_RPC_CBOR_CMD_DECODER(grp, name, id, handler, ...) \
+	static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:REGISTER_DECODER=" #handler
+
+#undef NRF_RPC_CBOR_EVT_DECODER
+#define NRF_RPC_CBOR_EVT_DECODER(grp, name, id, handler, ...) \
+	static const char* _SERIALIZE__UNIQUE() = "__SERIALIZE__:REGISTER_DECODER=" #handler
 
 #endif
