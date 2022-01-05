@@ -1,3 +1,3 @@
-# drafts
+# Simple compression
 
-Each branch on this repository contains some different unrelated draft.
+Draft of simple compression based on DEFLATE that can be used to increate application image slot size.
