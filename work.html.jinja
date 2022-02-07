@@ -1,0 +1,88 @@
+<div id="{{ id }}">
+
+	<style>
+		table._my_table {
+			font-size: 11pt;
+		}
+		table._my_table td {
+			width: 100px;
+			vertical-align: middle;
+		}
+		table._my_table td:nth-child(n+2) {
+			text-align: center;
+		}
+		table._my_table td:first-child {
+			text-align: left;
+			padding-left: 20px;
+		}
+		table._my_table tbody tr:nth-child(odd) td {
+			background-color: #CCC;
+		}
+		table._my_table tbody tr:nth-child(even) td,
+		table._my_table thead tr:nth-child(odd) td {
+			background-color: #AAA;
+		}
+		table._my_table tbody td {
+			cursor: pointer;
+			height: 38px;
+		}
+		table._my_table tbody td input {
+			cursor: pointer;
+			width: 20px;
+			height: 20px;
+		}
+		table._my_table td img {
+			max-height: 48px;
+			width: 48px;
+			height: auto;
+		}
+		._my_btn {
+			font-size: 13pt;
+			font-weight: bold;
+			padding: 13px;
+			width: 150px;
+			margin: 10px;
+			border-radius: 8px;
+			cursor: pointer;
+		}
+		#{{ id }} {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			z-index: 1000001;
+			background-color: #CCC;
+			padding: 32px;
+			border: 2px solid silver;
+			box-shadow: 8px 8px 24px 0px rgba(66, 68, 90, 1);
+			border-radius: 10px;
+		}
+	</style>
+
+	<table class="_my_table">
+	<thead>
+	<tr>
+		<td></td>
+		{% for prj in projects %}
+		<td width="90"><b>&nbsp;<br/><img src="{{ prj[4] }}" /><br/>{{ prj[1] }}<br/>&nbsp;</b></td>
+		{% endfor %}
+	</tr>
+	</thead>
+	<tbody>
+	{% for day in days %}
+	<tr>
+		<td class="_my_day">{{ day.text }}</td>
+		{% for prj in projects %}
+		<td class="_my_radio" onclick="document.getElementById('_my_prj_{{ day.id }}_{{ prj[0] }}').checked=1;">
+			<input type="radio" id="_my_prj_{{ day.id }}_{{ prj[0] }}" name="_my_prj_{{ day.id }}" value="{{ prj[0] }}"
+			{% if day.checked == prj[0] %} checked="checked" {% endif %} />
+		</td>
+		{% endfor %}
+	</tr>
+	{% endfor %}
+	</tbody>
+	</table><br/>&nbsp;<br/>&nbsp;
+	<center>
+		<input type="button" value="OK" class="_my_btn _my_ok" id="_my_btn_ok" onclick="window._userInput='ok'"/>
+		<input type="button" value="Cancel" id="_my_btn_cancel" class="_my_btn" onclick="window._userInput='cancel'"/>
+	</center>
+</div>

@@ -1,0 +1,38 @@
+<div id="{{ id }}">
+	<style>
+		a._my_period {
+			display: block;
+			padding: 10px;
+			margin: 10px;
+			background-color: #DDD;
+			border: 1px solid #FFF;
+			border-radius: 5px;
+			box-shadow: 1px 1px 4px 1px rgba(0, 0, 0, 0.4);
+			font-size: 11pt;
+			text-decoration: none;
+			color: #000;
+		}
+
+		a._my_period:hover {
+			color: #000;
+			box-shadow: 1px 1px 3px 2px rgba(0, 0, 0, 0.4);
+			background-color: #FFF;
+		}
+
+		#{{ id }} {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			z-index: 1000001;
+			background-color: #CCC;
+			padding: 32px;
+			border: 2px solid silver;
+			box-shadow: 8px 8px 24px 0px rgba(66, 68, 90, 1);
+			border-radius: 10px;
+		}
+	</style>
+	{% for p in periods %}
+	<a class="_my_period" href="javascript://" onclick="window._userInput={{ p.value }}">{{ p.name }}</a>
+	{% endfor %}
+	<a class="_my_period" href="javascript://" onclick="window._userInput=-1">Skip timesheet creation</a>
+</div>
