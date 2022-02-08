@@ -1,26 +1,9 @@
-
-url = 'https://nod-prod.operations.dynamics.com/?mi=TSTimesheetEntryGridViewMyTimesheets'
-
-projects = [
-	# [ Number, Friendly name, Project ID, Category,  Image URL ]
-	[0, 'NCS',          4455, 11170, 'https://www.nordicsemi.com/-/media/Images/Products/SDKs/nRFConnectSDK_new.png'],
-	[1, 'Old nRF5 SDK', 4398, 11170, 'https://www.nordicsemi.com/-/media/Images/Products/SDKs/nRF5-SDK.png'],
-	[2, 'Urlop',        9000, 95100, 'https://icons.getbootstrap.com/assets/icons/emoji-sunglasses.svg'],
-	[3, 'L4',           9000, 94100, 'https://icons.getbootstrap.com/assets/icons/thermometer-high.svg'],
-	[4, 'Chore dz.',    9000, 94300, 'https://us.123rf.com/450wm/goodstocker/goodstocker1810/goodstocker181000112/109750841-sick-child-boy-with-thermometer-in-his-mouth-cartoon-design-icon-colorful-flat-vector-illustration-i.jpg?ver=6'],
-	[5, 'Brak',            0,     0, 'https://icons.getbootstrap.com/assets/icons/x-square.svg']
-]
-
-default_project = 0
-empty_project = 5
-default_hours = 8
-
+from conf import url, projects, default_project, empty_project, default_hours
 from datetime import date, datetime, timedelta
 import re
 import os
 import os.path
 import json
-from turtle import Turtle
 from jinja2 import Template
 from posixpath import dirname
 from time import sleep
@@ -30,13 +13,15 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import StaleElementReferenceException
 
-if not (os.path.isfile(dirname(__file__) + '/chromedriver') or os.path.isfile(dirname(__file__) + '/chromedriver.exe')):
-	print(f'Cannot find Chrome WebDriver binary in "{dirname(__file__)}" directory.')
+script_dir = dirname(os.path.realpath(__file__))
+
+if not (os.path.isfile(script_dir + '/chromedriver') or os.path.isfile(script_dir + '/chromedriver.exe')):
+	print(f'Cannot find Chrome WebDriver binary in "{script_dir}" directory.')
 	print('Download it from:')
 	print('   https://chromedriver.storage.googleapis.com/index.html')
 	exit(1)
 
-os.environ["PATH"] = os.environ["PATH"] + ":" + dirname(__file__)
+os.environ["PATH"] = os.environ["PATH"] + ":" + script_dir
 
 next_inject_id = 1
 
@@ -157,7 +142,7 @@ def select_period():
 		return False
 
 def select_work():
-	global driver, projects, default_project, empty_project, default_hours
+	global driver
 	days = []
 	for e in find_all_with_regex('div[data-dyn-columnname^="TSTimesheetLineWeek_Hours_"]', []):
 		name = e.get_attribute('data-dyn-columnname')
@@ -222,7 +207,7 @@ def select_menu():
 
 options = ChromeOptions()
 options.page_load_strategy = 'normal'
-options.add_argument("user-data-dir=" + dirname(__file__) + "/user-data") 
+options.add_argument(f'user-data-dir={script_dir}/user-data')
 driver = webdriver.Chrome(options=options)
 driver.implicitly_wait(16)
 driver.get(url)
