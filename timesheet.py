@@ -49,7 +49,7 @@ def find_all_with_regex(selector, attr_name, regex=''):
 	start = datetime.now()
 	arr = filter_by_regex(driver.find_elements_by_css_selector(selector), attr_name, regex)
 	while len(arr) == 0:
-		if (datetime.now() - start).seconds >= 15:
+		if (datetime.now() - start).seconds >= 25:
 			raise TimeoutError()
 		sleep(0.1)
 		arr = filter_by_regex(driver.find_elements_by_css_selector(selector), attr_name, regex)
@@ -112,7 +112,7 @@ def wait_for_user_input(driver):
 	return get_user_input() is not None
 
 def select_period():
-	global driver
+	global driver, script_dir
 	new_button = find_with_regex('button', 'innerText', 'New')
 	new_button.click()
 	date_input = find_with_regex('input[type="text"]', 'id', r'TSTimesheetCreate.*DateFrom.*')
@@ -126,7 +126,7 @@ def select_period():
 		days = p['value']
 		pstr = (now - timedelta(days)).strftime('%d.%m.%Y')
 		p['name'] += f' ({pstr})'
-	window = inject_html('period.html.jinja', { 'periods': periods })
+	window = inject_html(f'{script_dir}/period.html.jinja', { 'periods': periods })
 	WebDriverWait(driver, 10000000).until(wait_for_user_input)
 	remove_html(window)
 	days = get_user_input(True)
@@ -142,7 +142,7 @@ def select_period():
 		return False
 
 def select_work():
-	global driver
+	global driver, script_dir
 	days = []
 	for e in find_all_with_regex('div[data-dyn-columnname^="TSTimesheetLineWeek_Hours_"]', []):
 		name = e.get_attribute('data-dyn-columnname')
@@ -150,7 +150,7 @@ def select_work():
 		if day['text'][0] == '*':
 			day['checked'] = empty_project
 		days.append(day)
-	window = inject_html('work.html.jinja', { 'days': days, 'projects': projects })
+	window = inject_html(f'{script_dir}/work.html.jinja', { 'days': days, 'projects': projects })
 	WebDriverWait(driver, 10000000).until(wait_for_user_input)
 	rows = []
 	user_input = get_user_input(True)
@@ -199,8 +199,8 @@ def select_work():
 	return True
 
 def select_menu():
-	global driver
-	window = inject_html('menu.html.jinja')
+	global driver, script_dir
+	window = inject_html(f'{script_dir}/menu.html.jinja')
 	WebDriverWait(driver, 10000000).until(wait_for_user_input)
 	remove_html(window)
 	return get_user_input(True)
@@ -209,7 +209,7 @@ options = ChromeOptions()
 options.page_load_strategy = 'normal'
 options.add_argument(f'user-data-dir={script_dir}/user-data')
 driver = webdriver.Chrome(options=options)
-driver.implicitly_wait(16)
+driver.implicitly_wait(26)
 driver.get(url)
 
 state = 'new'
@@ -229,7 +229,7 @@ while True:
 			break
 	except TimeoutError:
 		get_user_input(True)
-		window = inject_html('error.html.jinja')
+		window = inject_html(f'{script_dir}/error.html.jinja')
 		WebDriverWait(driver, 10000000).until(wait_for_user_input)
 		remove_html(window)
 		if get_user_input(True):
