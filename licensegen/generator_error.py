@@ -1,0 +1,3 @@
+
+class GeneratorError(Exception):
+    pass
