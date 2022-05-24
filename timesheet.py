@@ -113,9 +113,18 @@ def wait_for_user_input(driver):
 
 def select_period():
 	global driver, script_dir
-	new_button = find_with_regex('button', 'innerText', 'New')
+	while True:
+		print('Waiting for key')
+		new_button = find_with_regex('button,a', 'innerText', r'New|Forgot my password|I can\'t use my Microsoft Authenticator app right now')
+		if new_button.get_attribute('innerText') == 'New':
+			print('New')
+			break
+		else:
+			print('Sign in')
+			print('Sleeping')
+			sleep(1)
 	new_button.click()
-	date_input = find_with_regex('input[type="text"]', 'id', r'TSTimesheetCreate.*DateFrom.*')
+	date_input = find_with_regex('input[type="text"][id^="TSTimesheetCreate"]', 'id', r'TSTimesheetCreate.*DateFrom.*')
 	now = date.today()
 	periods = [
 		{'name': 'This week', 'value': 0},
@@ -134,7 +143,7 @@ def select_period():
 		date_str = (now - timedelta(days)).strftime('%d.%m.%Y')
 		date_input.send_keys(Keys.CONTROL + 'a')
 		date_input.send_keys(date_str)
-		ok_button = find_with_regex('button', 'id', r'TSTimesheetCreate_.*_OK')
+		ok_button = find_with_regex('button[id^="TSTimesheetCreate_"]', 'id', r'TSTimesheetCreate_.*_OK')
 		ok_button.click()
 		sleep(5)
 		return True
@@ -170,32 +179,24 @@ def select_work():
 			rows.append(row)
 	remove_html(window)
 	for row in rows:
-		new_button = find_with_regex('button', 'innerText', r'New line')
+		new_button = find_with_regex('button[data-dyn-controlname="NewLine"]', 'innerText', r'New line')
 		new_button.click()
-		proj_id_input = find_with_regex('input[type="text"]', [
-			['id', r'ProjId_.*_input'],
-			['value', r'']
-		])
+		proj_id_input = find_with_regex('input[type="text"][id^="ProjId_"][id$="_input"][value=""]', [])
 		proj_id_input.send_keys(str(row['prj']))
-		cat_id_input = find_with_regex('input[type="text"]', [
-			['id', r'CatergoryName_.*_input'],
-			['value', r'']
-		])
+		cat_id_input = find_with_regex('input[type="text"][id^="CatergoryName_"][id$="_input"][value=""]', [])
 		cat_id_input.send_keys(str(row['cat']))
 		for day in days:
 			if day['id'] not in row:
 				continue
-			arr = find_all_with_regex('input[type="text"]', [
-				['id', f'TSTimesheetLineWeek_Hours_{day["id"]}_.*_input'],
-				['value', r'']
-			])
+			arr = find_all_with_regex('input[type="text"][id^="TSTimesheetLineWeek_Hours_"][id$="_input"][value=""]',
+				'id', f'TSTimesheetLineWeek_Hours_{day["id"]}_.*_input')
 			assert len(arr) > 0
 			arr.sort(key = (lambda x : get_tree_distance(proj_id_input, x)))
 			arr[0].send_keys(str(row[day['id']]))
 		proj_id_input.click()
-	find_with_regex('button', 'innerText', 'Save').click()
+	find_with_regex('button[data-dyn-controlname="SystemDefinedSaveButton"]', 'innerText', 'Save').click()
 	sleep(0.5)
-	find_with_regex('button', 'innerText', 'Workflow').click()
+	find_with_regex('button[data-dyn-controlname*="Workflow"]', 'innerText', 'Workflow').click()
 	return True
 
 def select_menu():
