@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "name": "rst_search",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "node main.js"
+  },
+  "dependencies": {
+    "flexsearch": "^0.7.21"
+  }
+}
