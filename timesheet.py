@@ -1,3 +1,4 @@
+import subprocess
 from conf import url, projects, default_project, empty_project, default_hours
 from datetime import date, datetime, timedelta
 import re
@@ -11,7 +12,11 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, SessionNotCreatedException
+
+def exit_with_prompt(code=0):
+	input("Press Enter to continue...")
+	exit(code)
 
 script_dir = dirname(os.path.realpath(__file__))
 
@@ -19,7 +24,7 @@ if not (os.path.isfile(script_dir + '/chromedriver') or os.path.isfile(script_di
 	print(f'Cannot find Chrome WebDriver binary in "{script_dir}" directory.')
 	print('Download it from:')
 	print('   https://chromedriver.storage.googleapis.com/index.html')
-	exit(1)
+	exit_with_prompt(1)
 
 os.environ["PATH"] = os.environ["PATH"] + ":" + script_dir
 
@@ -209,7 +214,22 @@ def select_menu():
 options = ChromeOptions()
 options.page_load_strategy = 'normal'
 options.add_argument(f'user-data-dir={script_dir}/user-data')
-driver = webdriver.Chrome(options=options)
+try:
+	driver = webdriver.Chrome(options=options)
+except SessionNotCreatedException as ex:
+	text = str(ex)
+	if text.find('ChromeDriver') < 0:
+		raise
+	print(ex.msg)
+	print('Chrome WebDriver version maybe incorrect.')
+	print('Download it from:')
+	print('   https://chromedriver.storage.googleapis.com/index.html')
+	print('and place it in:')
+	print(f'   {script_dir}')
+	input("Press Enter to restart...")
+	subprocess.call(f"python {os.path.realpath(__file__)}", shell=True)
+	exit(0)
+
 driver.implicitly_wait(26)
 driver.get(url)
 
