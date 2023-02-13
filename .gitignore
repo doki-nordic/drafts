@@ -1,3 +1,5 @@
 /user-data
 /chromedriver*
 /__pycache__
+/venv/
+*.chromedriver*

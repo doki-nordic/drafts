@@ -1,10 +1,14 @@
+from pathlib import Path
+import shutil
 import subprocess
+import zipfile
 from conf import url, projects, default_project, empty_project, default_hours
 from datetime import date, datetime, timedelta
 import re
 import os
 import os.path
 import json
+import urllib.request
 from jinja2 import Template
 from posixpath import dirname
 from time import sleep
@@ -18,13 +22,41 @@ def exit_with_prompt(code=0):
 	input("Press Enter to continue...")
 	exit(code)
 
+def download_chrome_driver():
+	cp = subprocess.run(['google-chrome', '--version'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, encoding='utf-8')
+	m = re.search(f'[0-9]+\.[0-9]+\.[0-9]+', cp.stdout)
+	if (cp.returncode != 0) or (m is None):
+		print('Cannot download chromedriver automatically!')
+		return
+	ver = m.group(0)
+	print(f'Current version: {ver}')
+	with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{ver}') as fd:
+		driver_ver = fd.read().decode('utf-8')
+	m = re.match(f'[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?', driver_ver)
+	if m is None:
+		print('Cannot download chromedriver automatically!')
+		return
+	print(f'Chromedriver version: {driver_ver}')
+	zip_path = Path(__file__).parent / 'chromedriver_linux64.zip'
+	with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/{driver_ver}/chromedriver_linux64.zip') as src:
+		with open(zip_path, 'wb') as dst:
+			shutil.copyfileobj(src, dst)
+	with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+		zip_ref.extractall(Path(__file__).parent)
+	os.chmod(Path(__file__).parent / 'chromedriver', 0o755)
+	cp = subprocess.run([str(Path(__file__).parent / 'chromedriver'), '--version'], check=True)
+	print('Automatic download successful. You can now restart the script.')
+
 script_dir = dirname(os.path.realpath(__file__))
 
 if not (os.path.isfile(script_dir + '/chromedriver') or os.path.isfile(script_dir + '/chromedriver.exe')):
 	print(f'Cannot find Chrome WebDriver binary in "{script_dir}" directory.')
 	print('Download it from:')
 	print('   https://chromedriver.storage.googleapis.com/index.html')
-	exit_with_prompt(1)
+	download_chrome_driver()
+	input("Press Enter to restart...")
+	subprocess.call(f"python {os.path.realpath(__file__)}", shell=True)
+	exit(0)
 
 os.environ["PATH"] = os.environ["PATH"] + ":" + script_dir
 
@@ -226,6 +258,7 @@ except SessionNotCreatedException as ex:
 	print('   https://chromedriver.storage.googleapis.com/index.html')
 	print('and place it in:')
 	print(f'   {script_dir}')
+	download_chrome_driver()
 	input("Press Enter to restart...")
 	subprocess.call(f"python {os.path.realpath(__file__)}", shell=True)
 	exit(0)
