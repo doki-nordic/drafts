@@ -680,7 +680,8 @@ def main():
         print('dlt {number=254}{name=DLT_BLUETOOTH_LINUX_MONITOR}{display=Bluetooth Linux Monitor}')
         exit(0)
 
-    if args.extcap_config:
+    if args.extcap_config: # TODO: Some versions of Wireshark does not correctly handle {required=true}, so everyting must be optional.
+                           # TODO: Make sure that scripts handles any missing parameter, e.g. by passing an error message to Wireshark.
         print(dedent('''
             arg {number=0}{call=--device}{display=Device}{tooltip=Device name - press Help for full list}{type=string}{required=false}{group=Main}
             arg {number=1}{call=--iface}{display=Interface}{tooltip=Target interface}{type=selector}{required=false}{group=Main}
@@ -709,7 +710,7 @@ def main():
     bat_file = script_file.with_suffix('.bat')
     venv_dir = Path(str(script_file.with_suffix('')) + '_venv')
 
-    if is_windows and (script_file.parent.name == 'extcap') and ((not bat_file.exists()) or (not venv_dir.exists())):
+    if is_windows and (script_file.parent.name == 'extcap') and ((not bat_file.exists()) or (not venv_dir.exists())): # TODO: add switch to force the configuration
         configure_windows(bat_file, venv_dir)
         exit()
 
