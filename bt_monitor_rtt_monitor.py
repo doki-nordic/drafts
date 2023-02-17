@@ -1,17 +1,205 @@
 #!/usr/bin/env python3
 
+import binascii
+from pathlib import Path
+import platform
 import argparse
 import math
 import os
+import random
 import signal
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import traceback
 from textwrap import dedent
 from time import sleep
 from types import SimpleNamespace
+
+# python -m venv _bt_monitor_rtt_venv
+# pip install pywin32
+
+is_windows = platform.system().lower() == 'windows'
+
+class PipeInterface:
+    def create(self) -> str: pass
+    def get_name(self) -> str: pass
+    def open(self, write: bool, name: str = None) -> None: pass
+    def close(self) -> None: pass
+    def read1(self, size: int) -> 'bytes|None': pass
+    def write(self, data: 'bytes|bytearray') -> None: pass
+
+def createPipeWinClass():
+    # Put imports in a function to avoid missing modules on non-Windows platforms
+    import win32pipe, win32file, pywintypes
+
+    class PipeWin(PipeInterface):
+        def __init__(self) -> None:
+            self.name = None
+            self.server = False
+            self.handle = None
+            self.thread = None
+
+        def create(self, write: bool) -> str:
+            self.name = r'\\.\pipe\rtt_hci_' + binascii.hexlify(random.randbytes(16)).decode()
+            self.server = True
+            self.handle = win32pipe.CreateNamedPipe(
+                self.name,
+                win32pipe.PIPE_ACCESS_OUTBOUND if write else win32pipe.PIPE_ACCESS_INBOUND,
+                win32pipe.PIPE_TYPE_BYTE | win32pipe.PIPE_READMODE_BYTE | win32pipe.PIPE_WAIT,
+                1, 65536, 65536, 0, None)
+            if self.handle == win32file.INVALID_HANDLE_VALUE:
+                self.handle = None
+                self.server = False
+                self.name = None
+                raise IOError(f'Cannot create named pipe on "{self.name}"')
+            return self.name
+
+        def get_name(self):
+            return self.name
+
+        def open(self, write: bool, name: str = None) -> None:
+            if (name is None) and (self.name is None):
+                raise ValueError()
+            self.name = self.name or name
+            if self.server:
+                state = 0
+                def timeout():
+                    nonlocal state
+                    sleep(3)
+                    if state == 0:
+                        state = 2
+                        if log: log('Timeout while waiting for pipe client')
+                        temp_handle = win32file.CreateFile(
+                            self.name,
+                            win32file.GENERIC_READ if write else win32file.GENERIC_WRITE,
+                            0, None, win32file.OPEN_EXISTING, 0, None)
+                        win32file.CloseHandle(self.handle)
+                        win32file.CloseHandle(temp_handle)
+                threading.Thread(target=timeout, daemon=True).start()
+                if log: log('Waiting for client of named pipe')
+                win32pipe.ConnectNamedPipe(self.handle, None)
+                if log: log('Done')
+                if state == 2:
+                    raise TimeoutError()
+                else:
+                    state = 1
+            elif self.handle is not None:
+                raise ValueError()
+            else:
+                self.handle = win32file.CreateFile(
+                    self.name,
+                    win32file.GENERIC_WRITE if write else win32file.GENERIC_READ,
+                    0, None, win32file.OPEN_EXISTING, 0, None)
+                if self.handle == win32file.INVALID_HANDLE_VALUE:
+                    self.handle = None
+                    raise IOError(f'Cannot open named pipe "{self.name}"')
+            if write:
+                def check_writeable():
+                    while True:
+                        sleep(0.5)
+                        handle = self.handle
+                        if handle is None:
+                            return
+                        try:
+                            win32file.WriteFile(handle, b'')
+                        except:
+                            import win32console
+                            win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, os.getpid())
+                            if log: log('Write File error!')
+                            return
+                self.thread = threading.Thread(target=check_writeable)
+                self.thread.start()
+
+        def is_closed(self) -> bool:
+            return self.handle is None
+
+        def read1(self, size: int) -> 'bytes|None':
+            rc, data = win32file.ReadFile(self.handle, size)
+            if rc != 0:
+                raise BrokenPipeError(f'Cannot read from pipe "{self.name}"')
+            return data
+                
+        def write(self, data: 'bytes|bytearray') -> None:
+            if isinstance(data, bytearray):
+                data = bytes(data)
+            offset = 0
+            while offset < len(data):
+                rc, written = win32file.WriteFile(self.handle, data if offset == 0 else data[offset:])
+                if rc != 0:
+                    raise BrokenPipeError(f'Cannot write to pipe "{self.name}"')
+                offset += written
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            if self.handle is not None:
+                win32file.CloseHandle(self.handle)
+                self.handle = None
+            self.name = None
+            self.server = False
+            self.handle = None
+            if (self.thread is not None) and self.thread.is_alive():
+                self.thread.join()
+
+    return PipeWin
+        
+
+class Pipe(PipeInterface):
+    def __init__(self) -> None:
+        self.name = None
+        self.delete_on_close = False
+        self.fd = None
+
+    def create(self, write: bool) -> str:
+        self.name = tempfile.mktemp(prefix='rtt-hci-fifo-')
+        os.mkfifo(self.name)
+        self.delete_on_close = True
+        return self.name
+
+    def get_name(self) -> str:
+        return self.name
+
+    def open(self, write: bool, name: str = None) -> None:
+        if ((name is None) and (self.name is None)) or (self.fd is not None):
+            raise ValueError()
+        self.name = self.name or name
+        self.fd = open(self.name, 'wb' if write else 'rb')
+
+    def is_closed(self) -> bool:
+        return (self.fd is None) or (self.fd.closed)
+
+    def close(self) -> None:
+        try:
+            if (self.fd is not None) and (not self.fd.closed):
+                self.fd.close()
+        finally:
+            if self.delete_on_close:
+                try:
+                    os.unlink(self.name)
+                except:
+                    pass
+            self.name = None
+            self.delete_on_close = False
+            self.fd = None
+
+    def read1(self, size: int) -> 'bytes|None':
+        self.fd.read1(size)
+
+    def write(self, data: 'bytes|bytearray') -> None:
+        self.fd.write(data)
+    
+    def flush(self) -> None:
+        self.fd.flush()
+
+if is_windows:
+    try:
+        Pipe = createPipeWinClass()
+    except:
+        pass # TODO: something different
 
 
 MAX_PACKET_DATA_LENGTH = 300 # TODO: Check specification
@@ -103,6 +291,7 @@ class Args(SimpleNamespace):
     logger: str
     debug: str
     fifo: str
+    pip_install: str
     def __init__(self, src):
         super(Args, self).__init__(**src.__dict__)
 
@@ -125,6 +314,9 @@ parser.add_argument('--logger')
 parser.add_argument('--debug')
 # Capture options
 parser.add_argument('--fifo')
+# Windows-only flag
+parser.add_argument('--pip-install', action='store_true')
+
 
 args = Args(parser.parse_known_args()[0])
 
@@ -147,16 +339,23 @@ class SignalTerminated(Exception):
     pass
 
 
+ignore_signals = False
+
 # Add handler for termination signal from Wireshark
 def setup_signal_handler():
+    global ignore_signals
     def signal_handler(_, __):
-        raise SignalTerminated('SIGTERM')
-    signal.signal(signal.SIGTERM, signal_handler)
+        if not ignore_signals:
+            raise SignalTerminated()
+    if is_windows:
+        signal.signal(signal.SIGBREAK, signal_handler)
+    else:
+        signal.signal(signal.SIGTERM, signal_handler)
 
 
 # Global variables that have to be cleaned up even when exception occurs
-input_pipe = None
-output_pipe = None
+input_pipe: Pipe = None
+output_pipe: Pipe = None
 rtt_process = None
 
 class CorruptedException(Exception):
@@ -327,7 +526,9 @@ class PcapGenerator:
             self.output = bytearray()
         return result
 
+
 def stop_rtt_process():
+    global ignore_signals
     def wait_for_exit():
         for i in range(0, 40):
             if rtt_process.poll() is not None:
@@ -337,8 +538,13 @@ def stop_rtt_process():
             sleep(0.3)
         return False
     if (rtt_process is not None) and (rtt_process.returncode is None):
+        ignore_signals = True
         if log: log('RTTLogger process still running. Interrupting...')
-        rtt_process.send_signal(signal.SIGINT)
+        if platform.system().lower() == 'windows':
+            import win32console
+            win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, rtt_process.pid)
+        else:
+            rtt_process.send_signal(signal.SIGINT)
         if not wait_for_exit():
             if log: log('Cannot interrupt. Terminating...')
             rtt_process.terminate()
@@ -353,7 +559,8 @@ def report_error(*pargs, **kwargs):
     global output_pipe
     print(*pargs, **kwargs, file=sys.stderr)
     if output_pipe is None:
-        output_pipe = open(args.fifo, 'wb')
+        output_pipe = Pipe()
+        output_pipe.open(True, args.fifo)
 
 
 # Capturing
@@ -383,19 +590,19 @@ def capture():
         else:
             cmd.append('-RTTSearchRanges')
             cmd.append(args.addr.strip())
-    filename = tempfile.mktemp(prefix='rtt-hci-fifo-')
+
+    input_pipe = Pipe()
+    filename = input_pipe.create(False)
     cmd.append(filename)
 
     if log: log('Temporary FIFO', filename)
     if log: log('Subprocess command', cmd)
 
-    # Create FIFO
-    os.mkfifo(filename)
-    if log: log('FIFO ready')
+    rtt_stdout = open(Path(args.debug).with_suffix('.stdout.txt'), 'wb')
 
     # Starting child process
     try:
-        rtt_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        rtt_process = subprocess.Popen(cmd, stdout=rtt_stdout, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     except:
         report_error(f'Can not start JLinkRTTLogger. Check interface configuration.')
         raise
@@ -405,9 +612,11 @@ def capture():
     try:
         try:
             # Open FIFOs
-            input_pipe = open(filename, 'rb')
-            output_pipe = open(args.fifo, 'wb')
-            if log: log('Opened')
+            input_pipe.open(False)
+            if log: log('Input Opened')
+            output_pipe = Pipe()
+            output_pipe.open(True, args.fifo)
+            if log: log('Ouput Opened')
 
             # Write pcap file header to the output
             #output_pipe.write(b'\xD4\xC3\xB2\xA1\x02\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\xC9\x00\x00\x00')
@@ -423,7 +632,9 @@ def capture():
                 if len(pcap_data):
                     output_pipe.write(pcap_data)
                     output_pipe.flush()
+                if log: log(f'Write done')
                 data = input_pipe.read1(2048)
+                if log: log(f'Generated data {len(pcap_data)}')
                 if (data is None) or (len(data) == 0):
                     if log: log(f'Data ended from JLinkRTTLogger site after {total_bytes} bytes')
                     break
@@ -442,6 +653,21 @@ def capture():
         if log: log(f'Termination signal after {total_bytes} bytes')
         stop_rtt_process()
 
+def configure_windows(bat_file: Path, venv_dir: Path):
+    bat_content = dedent(r'''
+        @echo off
+        call "%~dpn0_venv\Scripts\activate.bat" || exit /b 99
+        python "%~dpn0.py" %*
+        ''')
+    print(f'Configuring virtual environment for { bat_file.with_suffix("").name }... This can take a few minutes...')
+    with open(bat_file, 'w') as fd:
+        fd.write(bat_content)
+    subprocess.run([sys.executable, '-m', 'venv', str(venv_dir.resolve())], check=True)
+    subprocess.run(['cmd.exe', '/c', str(bat_file.resolve()), '--pip-install'], check=True)
+    print('Environment for plugin configured. You can use it in Wireshark now.')
+
+def pip_install_windows():
+    subprocess.run(['pip.exe', 'install', 'pywin32'], check=True)
 
 # Main function
 def main():
@@ -449,15 +675,17 @@ def main():
         print('extcap {version=1.0}{help=https://www.segger.com/supported-devices/jlink/}')
         print('interface {value=bt_hci_rtt}{display=Bluetooth Linux monitor packets over RTT}')
         exit(0)
-    elif args.extcap_dlts:
+
+    if args.extcap_dlts:
         print('dlt {number=254}{name=DLT_BLUETOOTH_LINUX_MONITOR}{display=Bluetooth Linux Monitor}')
         exit(0)
-    elif args.extcap_config:
+
+    if args.extcap_config:
         print(dedent('''
-            arg {number=0}{call=--device}{display=Device}{tooltip=Device name - press Help for full list}{type=string}{required=true}{group=Main}
-            arg {number=1}{call=--iface}{display=Interface}{tooltip=Target interface}{type=selector}{required=true}{group=Main}
-            arg {number=2}{call=--speed}{display=Speed (kHz)}{tooltip=Target speed}{type=integer}{range=5,50000}{default=4000}{required=true}{group=Main}
-            arg {number=5}{call=--channel}{display=RTT Channel}{tooltip=RTT channel that monitor uses}{type=integer}{range=1,99}{default=1}{required=true}{group=Main}
+            arg {number=0}{call=--device}{display=Device}{tooltip=Device name - press Help for full list}{type=string}{required=false}{group=Main}
+            arg {number=1}{call=--iface}{display=Interface}{tooltip=Target interface}{type=selector}{required=false}{group=Main}
+            arg {number=2}{call=--speed}{display=Speed (kHz)}{tooltip=Target speed}{type=integer}{range=5,50000}{default=4000}{required=false}{group=Main}
+            arg {number=5}{call=--channel}{display=RTT Channel}{tooltip=RTT channel that monitor uses}{type=integer}{range=1,99}{default=1}{required=false}{group=Main}
             arg {number=3}{call=--snr}{display=Serial Number}{tooltip=Fill if you have more devices connected}{type=string}{required=false}{group=Optional}
             arg {number=4}{call=--addr}{display=RTT Address}{tooltip=Single address or ranges <Rangestart> <RangeSize>[, <Range1Start> <Range1Size>, ...]}{type=string}{required=false}{group=Optional}
             arg {number=6}{call=--logger}{display=JLinkRTTLogger Executable}{tooltip=Select your executable if you do not have in your PATH}{type=fileselect}{mustexist=true}{group=Optional}
@@ -468,11 +696,25 @@ def main():
             value {arg=1}{value=FINE}{display=FINE}{default=false}
         ''').strip())
         exit(0)
-    elif args.capture:
+
+    if args.capture:
         capture()
         return
-    else:
-        pass # todo
+
+    if args.pip_install:
+        pip_install_windows()
+        return
+
+    script_file = Path(__file__)
+    bat_file = script_file.with_suffix('.bat')
+    venv_dir = Path(str(script_file.with_suffix('')) + '_venv')
+
+    if is_windows and (script_file.parent.name == 'extcap') and ((not bat_file.exists()) or (not venv_dir.exists())):
+        configure_windows(bat_file, venv_dir)
+        exit()
+
+    parser.print_usage()
+    print(sys.argv)
 
 
 try:
@@ -489,7 +731,7 @@ finally:
         if log: log('Error')
         if log: log(traceback.format_exc())
     try:
-        if (input_pipe is not None) and (not input_pipe.closed):
+        if (input_pipe is not None) and (not input_pipe.is_closed()):
             if log: log('Input pipe no closed. Closing...')
             input_pipe.close()
             if log: log('OK')
@@ -497,7 +739,7 @@ finally:
         if log: log('Error')
         if log: log(traceback.format_exc())
     try:
-        if (output_pipe is not None) and (not output_pipe.closed):
+        if (output_pipe is not None) and (not output_pipe.is_closed()):
             if log: log('Output pipe no closed. Closing...')
             output_pipe.close()
             if log: log('OK')
@@ -505,4 +747,5 @@ finally:
         if log: log('Error')
         if log: log(traceback.format_exc())
     if log:
+        log('End of log')
         debug_file.close()
