@@ -225,6 +225,7 @@ class Watchdog:
         Watchdog._running = False
         if (Watchdog._thread is not None) and  (threading.current_thread().native_id != Watchdog._thread.native_id):
             Watchdog._thread.join()
+        Watchdog._thread = None
 
 
 #endregion
@@ -892,12 +893,12 @@ class Capture:
     def watch_output_pipe(self):
         if not self.output_pipe.writeable():
             log(f'Output pipe closed - capture stop request.')
-            self.stop_watchers()
+            Watchdog.stop()
             Process.raise_signal(SignalReason.OUTPUT_PIPE)
 
     def rtt_process_exited(self, proc: WatchedProcess):
         log(f'JLinkRTTLogger exited unexpectedly with status {proc.process.returncode}')
-        self.stop_watchers()
+        Watchdog.stop()
         Process.raise_signal(SignalReason.RTT_PROCESS_EXIT)
 
     def watchdog_exception(self, ex):
