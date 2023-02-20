@@ -15,10 +15,10 @@ import tempfile
 import threading
 import traceback
 import subprocess
+from time import sleep
 from enum import IntEnum
 from pathlib import Path
 from textwrap import dedent
-from time import sleep
 from types import SimpleNamespace
 
 
@@ -30,7 +30,7 @@ VERSION = '1.0.0'
 
 
 INTERFACE_NAME = 'bt_hci_rtt'
-DISPLAY_NAME = 'Bluetooth Linux monitor packets over RTT'
+DISPLAY_NAME = 'Bluetooth HCI monitor packets over RTT'
 JLINK_DEVICES_URL = 'https://www.segger.com/supported-devices/jlink/'
 
 EXTCAP_INTERFACES = dedent('''
@@ -244,6 +244,7 @@ class SignalReason(IntEnum):
 class SignalTerminated(Exception):
     def __init__(self, signal_reason: int):
         super().__init__()
+        log('New SignalTerminated, reason', signal_reason)
         self.signal_reason = signal_reason
 
 
@@ -262,7 +263,7 @@ class Process:
     @staticmethod
     def _signal_handler(_, __):
         if Process.handler_enabled:
-            log(f'Signal handler: raising signal with reason: {Process.signal_reason}')
+            log(f'Signal handler: raising signal with reason:', Process.signal_reason)
             raise SignalTerminated(Process.signal_reason)
         else:
             log('Signal handler ignored')
@@ -274,13 +275,12 @@ class Process:
     @staticmethod
     def raise_signal(signal_reason):
         Process.signal_reason = signal_reason
-        log(f'Raising SIGTERM to current process. Signal reason: {Process.signal_reason}')
+        log(f'Raising SIGTERM to current process. Signal reason:', Process.signal_reason)
         os.kill(os.getpid(), signal.SIGTERM)
-        #signal.raise_signal(signal.SIGTERM) TODO: check how to do it in Windows
 
     @staticmethod
     def interrupt_subprocess(process):
-        process.send_signal(signal.SIGINT) # TODO: check how to do it in Windows
+        process.send_signal(signal.SIGINT)
 
     @staticmethod
     def set_exit_code(code):
@@ -385,13 +385,6 @@ class Pipe():
     def writeable(self):
         # In Linux, we don't need to periodically check output pipe, because we will get
         # signal from Wireshark the moment pipe becomes closed.
-        # if self.fd is None:
-        #     return False
-        # if self.poll is None:
-        #     self.poll = select.poll()
-        #     self.poll.register(self.fd.fileno(), select.POLLHUP)
-        # fd_list = self.poll.poll(0)
-        # return len(fd_list) == 0
         return True
 
     def flush(self) -> None:
@@ -420,14 +413,18 @@ def windows_compatibility():
         @staticmethod
         def setup_signals(default_reason):
             Process.signal_reason = default_reason
-            signal.signal(signal.SIGBREAK, Process.signal_handler)
+            Process.handler_enabled = True
+            signal.signal(signal.SIGBREAK, Process._signal_handler)
 
         @staticmethod
-        def interrupt(process = None):
-            if process is None:
-                win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, os.getpid())
-            else:
-                win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, process.pid)
+        def raise_signal(signal_reason):
+            Process.signal_reason = signal_reason
+            log(f'Sending CTRL-BREAK event to current process. Signal reason:', Process.signal_reason)
+            win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, os.getpid())
+
+        @staticmethod
+        def interrupt_subprocess(process):
+            win32console.GenerateConsoleCtrlEvent(win32console.CTRL_BREAK_EVENT, process.pid)
 
 
     class WinPipe:
@@ -498,6 +495,7 @@ def windows_compatibility():
                 win32file.WriteFile(self.handle, b'')
                 return True
             except:
+                log('Pipe not writeable - cannot write empty to pipe')
                 return False
 
         def flush(self) -> None:
@@ -892,7 +890,7 @@ class Capture:
         log(f'Process created', self.rtt_process.process.pid)
 
     def watch_output_pipe(self):
-        if not self.input_pipe.writeable():
+        if not self.output_pipe.writeable():
             log(f'Output pipe closed - capture stop request.')
             self.stop_watchers()
             Process.raise_signal(SignalReason.OUTPUT_PIPE)
@@ -967,7 +965,7 @@ class Capture:
                 except BrokenPipeError:
                     self.stop_watchers()
                     log('BrokenPipeError')
-                    raise SignalTerminated(SignalReason.INPUT_PIPE if self.direction_input else SignalReason.OUTPUT_PIPE)
+                    raise SignalTerminated(SignalReason.INPUT_PIPE if self.direction_input and self.output_pipe.writeable() else SignalReason.OUTPUT_PIPE)
                 except KeyboardInterrupt:
                     self.stop_watchers()
                     log('KeyboardInterrupt')
@@ -1023,7 +1021,7 @@ class Capture:
 #endregion
 
 
-#region  Main function
+#region Main function
 
 
 def main():
