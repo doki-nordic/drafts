@@ -18,8 +18,17 @@ import subprocess
 from enum import IntEnum
 from pathlib import Path
 from textwrap import dedent
-from time import sleep
+from time import sleep, time
 from types import SimpleNamespace
+
+'''
+
+Draft of control pipes to show logs.
+Logs must be parsed from input pipe.
+Additionally, output control can periodically send status bar text and, as the result, also check if Wireshark crashed.
+
+'''
+exit(1)
 
 
 # Update major, minor or patch version for each change in this file.
@@ -36,6 +45,7 @@ JLINK_DEVICES_URL = 'https://www.segger.com/supported-devices/jlink/'
 EXTCAP_INTERFACES = dedent('''
     extcap {version=''' + VERSION + '''}{help=''' + JLINK_DEVICES_URL +'''}
     interface {value=''' + INTERFACE_NAME + '''}{display=''' + DISPLAY_NAME + '''}
+    control {number=0}{type=button}{role=logger}{display=Log}{tooltip=Show capture log}
     ''').strip()
 
 EXTCAP_DLTS = dedent('''
@@ -114,11 +124,13 @@ class Args(SimpleNamespace):
     debug: str
     debug_logger: str
     fifo: str
+    extcap_control_in: str
+    extcap_control_out: str
     initial_setup: bool
     pip_install: bool
     def __init__(self):
         # Arguments parsing
-        parser = argparse.ArgumentParser(allow_abbrev=False, argument_default='', add_help=False)
+        parser = argparse.ArgumentParser(allow_abbrev=False, argument_default='', add_help=False) # TODO: skip argument "is None" check, because it is always empty string by default.
         # Main commands
         parser.add_argument('--extcap-interfaces', action='store_true')
         parser.add_argument('--extcap-dlts', action='store_true')
@@ -133,9 +145,11 @@ class Args(SimpleNamespace):
         parser.add_argument('--addr')
         parser.add_argument('--logger')
         parser.add_argument('--debug')
-        parser.add_argument('--debug-logger')
+        parser.add_argument('--debug-logger') # TODO: put JLinkRTTLogger output to this file
         # Capture options
         parser.add_argument('--fifo')
+        parser.add_argument('--extcap-control-in')
+        parser.add_argument('--extcap-control-out')
         # Windows-only flag
         parser.add_argument('--initial-setup', action='store_true')
         parser.add_argument('--pip-install', action='store_true')
@@ -180,8 +194,7 @@ class Watchdog:
     TICK_TIME = 0.5
 
     @staticmethod
-    def init(exception_handler):
-        Watchdog._exception_handler = exception_handler
+    def init():
         Watchdog._running = True
         Watchdog._funcs = set()
         Watchdog._lock = threading.Lock()
@@ -207,7 +220,10 @@ class Watchdog:
                     finally:
                         Watchdog._lock.acquire()
         except BaseException as ex:
-            Watchdog._exception_handler(ex)
+            print('Unexpected exception occurred. See debug file for details.', file=sys.stderr)
+            log(f'Unexpected exception: {str(ex)}')
+            log(traceback.format_exc())
+            Process.set_exit_code(99)
         log('Watchdog thread stopped')
 
     @staticmethod
@@ -223,8 +239,9 @@ class Watchdog:
     @staticmethod
     def stop():
         Watchdog._running = False
-        if (Watchdog._thread is not None) and  (threading.current_thread().native_id != Watchdog._thread.native_id):
-            Watchdog._thread.join()
+        if Watchdog._thread is not None:
+            if threading.current_thread().native_id != Watchdog._thread.native_id:
+                Watchdog._thread.join()
 
 
 #endregion
@@ -234,11 +251,12 @@ class Watchdog:
 
 
 class SignalReason(IntEnum):
-    UNKNOWN = 0
+    DISABLE = 0
     CAPTURE_STOP = 1
     OUTPUT_PIPE = 2
     INPUT_PIPE = 3
     RTT_PROCESS_EXIT = 4
+    PARENT_EXIT = 5
 
 
 class SignalTerminated(Exception):
@@ -249,38 +267,34 @@ class SignalTerminated(Exception):
 
 class Process:
 
-    handler_enabled = False
-    signal_reason = SignalReason.UNKNOWN
+    signal_reason = SignalReason.DISABLE
     exit_code = 0
 
     @staticmethod
-    def setup_signals(default_reason):
-        Process.signal_reason = default_reason
-        Process.handler_enabled = True
-        signal.signal(signal.SIGTERM, Process._signal_handler)
-
-    @staticmethod
-    def _signal_handler(_, __):
-        if Process.handler_enabled:
+    def signal_handler(_, __):
+        if Process.signal_reason != SignalReason.DISABLE:
             log(f'Signal handler: raising signal with reason: {Process.signal_reason}')
             raise SignalTerminated(Process.signal_reason)
         else:
             log('Signal handler ignored')
 
     @staticmethod
-    def disable_signals():
-        Process.handler_enabled = False
+    def setup_signals(default_reason):
+        Process.signal_reason = default_reason
+        signal.signal(signal.SIGTERM, Process.signal_handler)
 
     @staticmethod
-    def raise_signal(signal_reason):
+    def set_signal_reason(signal_reason):
         Process.signal_reason = signal_reason
-        log(f'Raising SIGTERM to current process. Signal reason: {Process.signal_reason}')
-        os.kill(os.getpid(), signal.SIGTERM)
-        #signal.raise_signal(signal.SIGTERM) TODO: check how to do it in Windows
 
     @staticmethod
-    def interrupt_subprocess(process):
-        process.send_signal(signal.SIGINT) # TODO: check how to do it in Windows
+    def interrupt(process = None):
+        if process is None:
+            log(f'Raising SIGTERM to current process. Signal reason: {Process.signal_reason}')
+            os.kill(os.getpid(), signal.SIGTERM)
+            #signal.raise_signal(signal.SIGTERM) TODO: check how to do it in Windows
+        else:
+            process.send_signal(signal.SIGINT)
 
     @staticmethod
     def set_exit_code(code):
@@ -317,7 +331,7 @@ class WatchedProcess:
         Watchdog.remove(self._watcher)
         if (self.process is not None) and (self.process.poll() is None):
             log('Process still running. Interrupting...')
-            Process.interrupt_subprocess(self.process)
+            Process.interrupt(self.process)
             if not self._wait_for_exit():
                 log('Cannot interrupt. Terminating...')
                 self.process.terminate()
@@ -816,8 +830,16 @@ class PcapGenerator:
 #endregion
 
 
-#region Main capture controlling class
-
+CTRL_CMD_INITIALIZED = 0
+CTRL_CMD_SET         = 1
+CTRL_CMD_ADD         = 2
+CTRL_CMD_REMOVE      = 3
+CTRL_CMD_ENABLE      = 4
+CTRL_CMD_DISABLE     = 5
+CTRL_CMD_STATUSBAR   = 6
+CTRL_CMD_INFORMATION = 7
+CTRL_CMD_WARNING     = 8
+CTRL_CMD_ERROR       = 9
 
 class Capture:
 
@@ -825,23 +847,20 @@ class Capture:
     input_pipe: 'None | Pipe'
     output_pipe: 'None | Pipe'
     rtt_stdout: 'None | io.BufferedWriter'
-    direction_input: bool
 
     def __init__(self):
         self.rtt_process = None
         self.input_pipe = None
         self.output_pipe = None
-        self.rtt_stdout = None
-        self.direction_input = False
+        self.control_in = None
+        self.control_out = None
+        self.rtt_stdout = None # TODO: clean this up in "finally" block
 
-    def report_error(self, message):
+    def report_error(self, message): # check if we can do that better with control pipe
         log(f'Reporting error message: {message}')
         Process.set_exit_code(1)
-        if args.debug.strip() == '':
-            message += ('\nIf you want to see more details, enable debug logs'
-                        'in interface configuration.')
-        else:
-            message += (f'\nYou can see more details in debug logs:\n{args.debug.strip()}')
+        if (args.debug.strip() == '') or (args.debug_logger.strip() == ''):
+            message += '\nIf you want to see more details, enable debug logs and JLinkRTTLogger stdout.'
         print('\n' + message, file=sys.stderr)
         if self.output_pipe is None:
             self.output_pipe = Pipe()
@@ -849,9 +868,7 @@ class Capture:
 
     def start_rtt_process(self):
         if not args.device.strip():
-            self.report_error('Target device not specified!\n'
-                              'Open and change interface configuration.')
-            raise SignalTerminated(SignalReason.CAPTURE_STOP)
+            self.report_error('Target device not specified!')
 
         cmd = [
             args.logger if args.logger.strip() else 'JLinkRTTLogger',
@@ -880,51 +897,90 @@ class Capture:
         else:
             stdout = subprocess.DEVNULL
 
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0
-
+        # Starting child process
         try:
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0
             self.rtt_process = WatchedProcess(self.rtt_process_exited, cmd,
                 stdout=stdout, stderr=subprocess.STDOUT, creationflags=creationflags)
         except:
-            log(traceback.format_exc())
             self.report_error('Can not start JLinkRTTLogger. Check interface configuration.')
-            raise SignalTerminated(SignalReason.CAPTURE_STOP)
+            raise
         log(f'Process created', self.rtt_process.process.pid)
 
+    def stop_rtt_process(self):
+        if self.rtt_process is not None:
+            self.rtt_process.stop()
+    
     def watch_output_pipe(self):
         if not self.input_pipe.writeable():
             log(f'Output pipe closed - capture stop request.')
             self.stop_watchers()
-            Process.raise_signal(SignalReason.OUTPUT_PIPE)
+            Process.set_signal_reason(SignalReason.OUTPUT_PIPE)
+            Process.interrupt()
+
+    def watch_parent(self):
+        try:
+            log(f'Kill result: {os.kill(os.getppid(), 0)}') # TODO: detect Wireshark crash in some different way
+        except:
+            log(f'Parent crashed - stopping.')
+            self.stop_watchers()
+            Process.set_signal_reason(SignalReason.PARENT_EXIT)
+            Process.interrupt()
 
     def rtt_process_exited(self, proc: WatchedProcess):
         log(f'JLinkRTTLogger exited unexpectedly with status {proc.process.returncode}')
         self.stop_watchers()
-        Process.raise_signal(SignalReason.RTT_PROCESS_EXIT)
+        Process.set_signal_reason(SignalReason.RTT_PROCESS_EXIT)
+        Process.interrupt()
 
-    def watchdog_exception(self, ex):
-        log('Unexpected exception occurred.')
-        log(traceback.format_exc())
-        self.report_error('Unexpected exception occurred.')
-        Process.raise_signal(SignalReason.UNKNOWN)
+    def control_write(self, arg, typ, payload):
+        if self.control_out is not None:
+            packet = bytearray()
+            packet += struct.pack('>sBHBB', b'T', 0, len(payload) + 2, arg, typ)
+            if sys.version_info[0] >= 3 and isinstance(payload, str):
+                packet += payload.encode('utf-8')
+            else:
+                packet += payload
+            self.control_out.write(packet)
 
     def capture_main_loop(self):
         Process.setup_signals(SignalReason.CAPTURE_STOP)
 
+        self.direction_input = True
+
         log('Capturing...')
 
+        Watchdog.init()
+
+        # Dead lock may appear if pipes are not opened in right order, so open them in separate threads.
+        threads_to_join = []
+        def open_control_out():
+            self.control_out = Pipe()
+            self.control_out.open(True, args.extcap_control_out)
+            log('Control out opened...')
+        def open_control_in():
+            self.control_in = Pipe()
+            self.control_in.open(False, args.extcap_control_in)
+            log('Control in opened...')
+        if args.extcap_control_out:
+            threads_to_join.append(threading.Thread(target=open_control_out))
+        if args.extcap_control_in:
+            threads_to_join.append(threading.Thread(target=open_control_in))
+        for thread in threads_to_join:
+            thread.start()
         self.output_pipe = Pipe()
         self.output_pipe.open(True, args.fifo)
         log('Output Opened')
+        for thread in threads_to_join:
+            thread.join()
 
-        Watchdog.init(self.watchdog_exception)
+        self.control_write(0, CTRL_CMD_ADD, f'====================================\n')
+        self.control_write(0, CTRL_CMD_ADD, f'             Log started\n')
+        self.control_write(0, CTRL_CMD_ADD, f'====================================\n')
 
         self.input_pipe = Pipe()
         self.input_pipe.create(False)
-        log('Input Created')
-
         self.start_rtt_process()
-
         self.input_pipe.open(False)
         log('Input Opened')
 
@@ -933,6 +989,8 @@ class Capture:
 
         if is_windows:
             Watchdog.add(self.watch_output_pipe)
+        
+        Watchdog.add(self.watch_parent)
 
         # Main capture transfer loop
         while True:
@@ -951,12 +1009,12 @@ class Capture:
             log(f'Parsing {len(data)}')
             parse.parse(data)
             packets = parse.get_packets()
-            log(f'Packets payload length: {["invalid" if isinstance(p, InvalidPacket) else len(p.payload) for p in packets]}')
+            log(f'Packets payload: {["invalid" if isinstance(p, InvalidPacket) else len(p.payload) for p in packets]}')
             for packet in packets:
                 gen.generate(packet)
 
     def stop_watchers(self):
-        Process.disable_signals()
+        Process.set_signal_reason(SignalReason.DISABLE)
         Watchdog.stop()
 
     def capture(self):
@@ -965,19 +1023,19 @@ class Capture:
                 try:
                     self.capture_main_loop()
                 except BrokenPipeError:
-                    self.stop_watchers()
                     log('BrokenPipeError')
+                    self.stop_watchers()
                     raise SignalTerminated(SignalReason.INPUT_PIPE if self.direction_input else SignalReason.OUTPUT_PIPE)
                 except KeyboardInterrupt:
-                    self.stop_watchers()
                     log('KeyboardInterrupt')
+                    self.stop_watchers()
                     raise SignalTerminated(SignalReason.CAPTURE_STOP)
             except SignalTerminated as ex:
                 self.stop_watchers()
                 log(f'Termination signal received: {str(ex.signal_reason)}')
                 if (ex.signal_reason == SignalReason.CAPTURE_STOP) or (ex.signal_reason == SignalReason.OUTPUT_PIPE):
                     log(f'Capture stopped, exiting gracefully')
-                elif (ex.signal_reason == SignalReason.RTT_PROCESS_EXIT) or (ex.signal_reason == SignalReason.INPUT_PIPE):
+                else:
                     self.report_error('JLinkRTTLogger exited unexpectedly.')
         except:
             self.stop_watchers()
@@ -991,36 +1049,39 @@ class Capture:
             except:
                 log(traceback.format_exc())
             try:
-                if self.rtt_process is not None:
-                    log('Stopping RTT process...')
-                    self.rtt_process.stop()
-                    log('OK')
+                log('Stopping RTT process...')
+                self.stop_rtt_process()
+                log('OK')
             except:
                 log(traceback.format_exc())
             try:
                 if self.input_pipe is not None:
-                    log('Input pipe not closed. Closing...')
+                    log('Input pipe no closed. Closing...')
                     self.input_pipe.close()
                     log('OK')
             except:
                 log(traceback.format_exc())
             try:
                 if self.output_pipe is not None:
-                    log('Output pipe not closed. Closing...')
+                    log('Output pipe no closed. Closing...')
                     self.output_pipe.close()
                     log('OK')
             except:
                 log(traceback.format_exc())
             try:
-                if self.rtt_stdout is not None:
-                    log('JLinkRTTLogger standard output file not closed. Closing...')
-                    self.rtt_stdout.close()
+                if self.control_out is not None:
+                    log('Control out pipe no closed. Closing...')
+                    self.control_out.close()
                     log('OK')
             except:
                 log(traceback.format_exc())
-
-
-#endregion
+            try:
+                if self.control_in is not None:
+                    log('Control in pipe no closed. Closing...')
+                    self.control_in.close()
+                    log('OK')
+            except:
+                log(traceback.format_exc())
 
 
 #region  Main function
@@ -1054,12 +1115,10 @@ def main():
 
 try:
     main()
-except:
+except BaseException as ex:
     print('Unexpected exception occurred. See debug file for details.', file=sys.stderr)
-    if args.debug.strip() != '':
-        log(traceback.format_exc())
-    else:
-        traceback.print_exc(file=sys.stderr)
+    log(f'Unexpected exception: {str(ex)}')
+    log(traceback.format_exc())
     Process.set_exit_code(99)
 finally:
     log(f'End of log, exit code {Process.get_exit_code()}')
