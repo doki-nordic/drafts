@@ -50,8 +50,9 @@ EXTCAP_CONFIG = dedent('''
     arg {number=3}{call=--snr}{display=Serial Number}{tooltip=Fill if you have more devices connected}{type=string}{required=false}{group=Optional}
     arg {number=4}{call=--addr}{display=RTT Address}{tooltip=Single address or ranges <Rangestart> <RangeSize>[, <Range1Start> <Range1Size>, ...]}{type=string}{required=false}{group=Optional}
     arg {number=6}{call=--logger}{display=JLinkRTTLogger Executable}{tooltip=Select your executable if you do not have in your PATH}{type=fileselect}{mustexist=true}{group=Optional}
-    arg {number=7}{call=--debug}{display=Debug output}{tooltip=This is only for debuging this extcap plugin}{type=fileselect}{mustexist=false}{group=Debug}
-    arg {number=8}{call=--debug-logger}{display=JLinkRTTLogger stdout}{tooltip=File that will contain standard output from JLinkRTTLogger}{type=fileselect}{mustexist=false}{group=Debug}
+    arg {number=7}{call=--note-to-log}{display=Convert System Note to Log}{tooltip=System Node packet will be visible as special User Logging packet}{type=boolean}{group=Optional}
+    arg {number=8}{call=--debug}{display=Debug output}{tooltip=This is only for debuging this extcap plugin}{type=fileselect}{mustexist=false}{group=Debug}
+    arg {number=9}{call=--debug-logger}{display=JLinkRTTLogger stdout}{tooltip=File that will contain standard output from JLinkRTTLogger}{type=fileselect}{mustexist=false}{group=Debug}
     value {arg=1}{value=SWD}{display=SWD}{default=true}
     value {arg=1}{value=JTAG}{display=JTAG}{default=false}
     value {arg=1}{value=cJTAG}{display=cJTAG}{default=false}
@@ -111,6 +112,7 @@ class Args(SimpleNamespace):
     snr: str
     addr: str
     logger: str
+    note_to_log: str
     debug: str
     debug_logger: str
     fifo: str
@@ -132,6 +134,7 @@ class Args(SimpleNamespace):
         parser.add_argument('--snr')
         parser.add_argument('--addr')
         parser.add_argument('--logger')
+        parser.add_argument('--note-to-log', default='false')
         parser.add_argument('--debug')
         parser.add_argument('--debug-logger')
         # Capture options
@@ -582,6 +585,15 @@ BT_MONITOR_ISO_TX_PKT = 18
 BT_MONITOR_ISO_RX_PKT = 19
 BT_MONITOR_NOP = 255
 
+BT_LOG_EMERG = 0
+BT_LOG_ALERT = 1
+BT_LOG_CRIT = 2
+BT_LOG_ERR = 3
+BT_LOG_WARNING = 4
+BT_LOG_NOTICE = 5
+BT_LOG_INFO = 6
+BT_LOG_DEBUG = 7
+
 HCI_H4_CMD = 0x01
 HCI_H4_ACL = 0x02
 HCI_H4_SCO = 0x03
@@ -789,12 +801,24 @@ class PcapGenerator:
         self.generate_capture_log(self.last_timestamp, f'Corrupted input detected from offset {packet.start_offset} to {packet.end_offset}')
 
     def generate_capture_log(self, timestamp, message):
-        self.generate_output(timestamp, BT_MONITOR_SYSTEM_NOTE, message.encode('utf-8'))
+        ident = 'bt_hci_rtt plugin'
+        payload = bytearray(struct.pack('<BB', BT_LOG_EMERG, len(ident) + 1))
+        payload += (ident + '\0CAPTURE PLUGIN NOTE: ' + message + '\0').encode('utf-8')
+        self.generate_output(timestamp, BT_MONITOR_USER_LOGGING, payload)
 
     def generate_valid(self, packet: Packet):
         if packet.drops is not None:
             self.generate_drops(packet.timestamp, packet.drops)
-        self.generate_output(packet.timestamp, packet.opcode, packet.payload)
+        if (packet.opcode == BT_MONITOR_SYSTEM_NOTE) and (args.note_to_log.lower() == 'true'):
+            ident = 'SYSTEM NOTE'
+            payload = bytearray(struct.pack('<BB', BT_LOG_NOTICE, len(ident) + 1))
+            payload += (ident + '\0').encode('utf-8')
+            payload += packet.payload
+            if not packet.payload.endswith(b'\0'):
+                payload += b'\0'
+            self.generate_output(packet.timestamp, BT_MONITOR_USER_LOGGING, payload)
+        else:
+            self.generate_output(packet.timestamp, packet.opcode, packet.payload)
         self.last_timestamp = packet.timestamp
 
     def generate_output(self, timestamp, opcode, payload):
