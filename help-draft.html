@@ -1,0 +1,49 @@
+<html>
+	<script>
+
+		const downloadUrl = 'https://github.com/org/repo/releases/download/v{{VERSION}}/{{FILE}}';
+
+		function getAppData() {
+			let dataStr = document.location.hash;
+			dataStr = atob(dataStr.substring(1));
+			let [ plugin, wireshark, file, tool ] = JSON.parse(dataStr);
+			let data = { plugin, wireshark, file, tool };
+			console.log('appData', data);
+			return data;
+		}
+
+		function quoteCommandArg(arg) {
+			if (arg.indexOf(' ') >= 0) {
+				return '"' + arg + '"';
+			} else {
+				return arg;
+			}
+		}
+
+		function getUpgradeCommand(version, file) {
+			if (!appData.tool) return null;
+			let curlIndex = appData.tool.indexOf('curl');
+			let wgetIndex = appData.tool.indexOf('wget');
+			let useCurl = curlIndex > wgetIndex;
+			let url = downloadUrl
+				.replace('{{VERSION}}', version)
+				.replace('{{FILE}}', file)
+			let command;
+			if (useCurl) {
+				command = `${quoteCommandArg(appData.tool)} -L ${url} -o ${quoteCommandArg(appData.file)}`;
+			} else {
+				command = `${quoteCommandArg(appData.tool)} -O ${quoteCommandArg(appData.file)} ${url}`;
+			}
+			console.log('upgradeCommand', command);
+			return command;
+		}
+
+		let appData = getAppData();
+		let upgradeCommand = getUpgradeCommand('2.1.1', 'bt_monitor_rtt.py');
+
+	</script>
+
+	<body>
+		HELP
+	</body>
+</html>
