@@ -121,12 +121,10 @@ EXTCAP_CONFIG = dedent('''
     arg {number=1}{call=--iface}{display=Interface}{tooltip=Target interface}{type=selector}{required=false}{group=Main}
     arg {number=2}{call=--speed}{display=Speed (kHz)}{tooltip=Target speed}{type=integer}{range=5,50000}{default=4000}{required=false}{group=Main}
     arg {number=5}{call=--channel}{display=RTT Channel}{tooltip=RTT channel that monitor uses}{type=integer}{range=1,99}{default=1}{required=false}{group=Main}
-    arg {number=10}{call=--update-to-1.3}{display=Automatically update to version 1.3}{tooltip=The plugin will automatically download and install newest version}{type=boolean}{group=Main}
     arg {number=3}{call=--snr}{display=Serial Number}{tooltip=Fill if you have more devices connected}{type=string}{required=false}{group=Optional}
     arg {number=4}{call=--addr}{display=RTT Address}{tooltip=Single address or ranges <Rangestart> <RangeSize>[, <Range1Start> <Range1Size>, ...]}{type=string}{required=false}{group=Optional}
     arg {number=6}{call=--logger}{display=JLinkRTTLogger Executable}{tooltip=Select your executable if you do not have in your PATH}{type=fileselect}{mustexist=true}{group=Optional}
     arg {number=7}{call=--note-to-log}{display=Convert System Note to Log}{tooltip=System Note packet will be visible as special User Logging packet}{type=boolean}{group=Optional}
-    arg {number=11}{call=--check-updates}{display=Check for updates}{tooltip=The plugin will periodically check its updates and inform you if new version is available}{type=boolean}{group=Optional}
     arg {number=8}{call=--debug}{display=Debug output}{tooltip=This is only for debuging this extcap plugin}{type=fileselect}{mustexist=false}{group=Debug}
     arg {number=9}{call=--debug-logger}{display=JLinkRTTLogger stdout}{tooltip=File that will contain standard output from JLinkRTTLogger}{type=fileselect}{mustexist=false}{group=Debug}
     value {arg=1}{value=SWD}{display=SWD}{default=true}
