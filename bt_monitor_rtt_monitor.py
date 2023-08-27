@@ -27,24 +27,75 @@ from types import SimpleNamespace
 # Update major, minor or patch version for each change in this file.
 VERSION = '1.0.0'
 
+#HELP_URL = f'https://doki-nordic.github.io/bt-monitor-rtt/help-{VERSION}.html'
+HELP_URL = f'file:///home/doki/my/tmp/a.html'
+
+
+#region Arguments parser
+
+
+class Args(SimpleNamespace):
+    extcap_interfaces: bool
+    extcap_dlts: bool
+    extcap_config: bool
+    capture: bool
+    device: str
+    iface: str
+    speed: str
+    channel: str
+    snr: str
+    addr: str
+    logger: str
+    note_to_log: str
+    debug: str
+    debug_logger: str
+    fifo: str
+    initial_setup: bool
+    pip_install: bool
+    extcap_version: str
+    def __init__(self):
+        # Arguments parsing
+        parser = argparse.ArgumentParser(allow_abbrev=False, argument_default='', add_help=False)
+        # Main commands
+        parser.add_argument('--extcap-interfaces', action='store_true')
+        parser.add_argument('--extcap-dlts', action='store_true')
+        parser.add_argument('--extcap-config', action='store_true')
+        parser.add_argument('--capture', action='store_true')
+        # Configuration
+        parser.add_argument('--device')
+        parser.add_argument('--iface', default='SWD')
+        parser.add_argument('--speed', default='4000')
+        parser.add_argument('--channel', default='1')
+        parser.add_argument('--snr')
+        parser.add_argument('--addr')
+        parser.add_argument('--logger')
+        parser.add_argument('--note-to-log', default='false')
+        parser.add_argument('--debug')
+        parser.add_argument('--debug-logger')
+        # Capture options
+        parser.add_argument('--fifo')
+        # Windows-only flag
+        parser.add_argument('--initial-setup', action='store_true')
+        parser.add_argument('--pip-install', action='store_true')
+        # Wireshark version
+        parser.add_argument('--extcap-version')
+        super(Args, self).__init__(**parser.parse_known_args()[0].__dict__)
+
+args = Args()
+
+
+#endregion
+
 
 #region Help URL creation
 
 
-def get_help_script_data():
+def get_help_url_with_data():
     download_tool = shutil.which('curl')
     if download_tool is None:
         download_tool = shutil.which('wget')
-    data = json.dumps({
-        'script': __file__,
-        'tool': download_tool,
-        'ver': VERSION
-    })
-    return base64.urlsafe_b64encode(data.encode('utf-8')).decode('utf-8')
-
-#HELP_URL = f'https://doki-nordic.github.io/bt-monitor-rtt/help-{VERSION}.html'
-HELP_URL = f'file:///home/doki/my/tmp/a.html'
-HELP_URL_WITH_DATA = f'{HELP_URL}#{get_help_script_data()}'
+    data = json.dumps([VERSION, args.extcap_version, __file__, download_tool])
+    return HELP_URL + '#' + base64.b64encode(data.encode('utf-8')).decode('utf-8')
 
 
 #endregion
@@ -57,7 +108,7 @@ INTERFACE_NAME = 'bt_hci_rtt'
 DISPLAY_NAME = 'Bluetooth HCI monitor over RTT'
 
 EXTCAP_INTERFACES = dedent('''
-    extcap {version=''' + VERSION + '''}{help=''' + HELP_URL_WITH_DATA +'''}
+    extcap {version=''' + VERSION + '''}{help=''' + get_help_url_with_data() +'''}
     interface {value=''' + INTERFACE_NAME + '''}{display=''' + DISPLAY_NAME + '''}
     ''').strip()
 
@@ -70,10 +121,12 @@ EXTCAP_CONFIG = dedent('''
     arg {number=1}{call=--iface}{display=Interface}{tooltip=Target interface}{type=selector}{required=false}{group=Main}
     arg {number=2}{call=--speed}{display=Speed (kHz)}{tooltip=Target speed}{type=integer}{range=5,50000}{default=4000}{required=false}{group=Main}
     arg {number=5}{call=--channel}{display=RTT Channel}{tooltip=RTT channel that monitor uses}{type=integer}{range=1,99}{default=1}{required=false}{group=Main}
+    arg {number=10}{call=--update-to-1.3}{display=Automatically update to version 1.3}{tooltip=The plugin will automatically download and install newest version}{type=boolean}{group=Main}
     arg {number=3}{call=--snr}{display=Serial Number}{tooltip=Fill if you have more devices connected}{type=string}{required=false}{group=Optional}
     arg {number=4}{call=--addr}{display=RTT Address}{tooltip=Single address or ranges <Rangestart> <RangeSize>[, <Range1Start> <Range1Size>, ...]}{type=string}{required=false}{group=Optional}
     arg {number=6}{call=--logger}{display=JLinkRTTLogger Executable}{tooltip=Select your executable if you do not have in your PATH}{type=fileselect}{mustexist=true}{group=Optional}
     arg {number=7}{call=--note-to-log}{display=Convert System Note to Log}{tooltip=System Note packet will be visible as special User Logging packet}{type=boolean}{group=Optional}
+    arg {number=11}{call=--check-updates}{display=Check for updates}{tooltip=The plugin will periodically check its updates and inform you if new version is available}{type=boolean}{group=Optional}
     arg {number=8}{call=--debug}{display=Debug output}{tooltip=This is only for debuging this extcap plugin}{type=fileselect}{mustexist=false}{group=Debug}
     arg {number=9}{call=--debug-logger}{display=JLinkRTTLogger stdout}{tooltip=File that will contain standard output from JLinkRTTLogger}{type=fileselect}{mustexist=false}{group=Debug}
     value {arg=1}{value=SWD}{display=SWD}{default=true}
@@ -119,59 +172,6 @@ def first_time_config():
     print('\nFor more information, see:')
     print(HELP_URL, '\n')
     Process.set_exit_code(98)
-
-
-#endregion
-
-
-#region Arguments parser
-
-
-class Args(SimpleNamespace):
-    extcap_interfaces: bool
-    extcap_dlts: bool
-    extcap_config: bool
-    capture: bool
-    device: str
-    iface: str
-    speed: str
-    channel: str
-    snr: str
-    addr: str
-    logger: str
-    note_to_log: str
-    debug: str
-    debug_logger: str
-    fifo: str
-    initial_setup: bool
-    pip_install: bool
-    def __init__(self):
-        # Arguments parsing
-        parser = argparse.ArgumentParser(allow_abbrev=False, argument_default='', add_help=False)
-        # Main commands
-        parser.add_argument('--extcap-interfaces', action='store_true')
-        parser.add_argument('--extcap-dlts', action='store_true')
-        parser.add_argument('--extcap-config', action='store_true')
-        parser.add_argument('--capture', action='store_true')
-        # Configuration
-        parser.add_argument('--device')
-        parser.add_argument('--iface', default='SWD')
-        parser.add_argument('--speed', default='4000')
-        parser.add_argument('--channel', default='1')
-        parser.add_argument('--snr')
-        parser.add_argument('--addr')
-        parser.add_argument('--logger')
-        parser.add_argument('--note-to-log', default='false')
-        parser.add_argument('--debug')
-        parser.add_argument('--debug-logger')
-        # Capture options
-        parser.add_argument('--fifo')
-        # Windows-only flag
-        parser.add_argument('--initial-setup', action='store_true')
-        parser.add_argument('--pip-install', action='store_true')
-        super(Args, self).__init__(**parser.parse_known_args()[0].__dict__)
-
-args = Args()
 
 
 #endregion
