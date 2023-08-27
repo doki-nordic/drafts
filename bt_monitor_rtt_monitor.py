@@ -15,6 +15,8 @@ import tempfile
 import threading
 import traceback
 import subprocess
+import base64
+import json
 from time import sleep
 from enum import IntEnum
 from pathlib import Path
@@ -26,15 +28,36 @@ from types import SimpleNamespace
 VERSION = '1.0.0'
 
 
+#region Help URL creation
+
+
+def get_help_script_data():
+    download_tool = shutil.which('curl')
+    if download_tool is None:
+        download_tool = shutil.which('wget')
+    data = json.dumps({
+        'script': __file__,
+        'tool': download_tool,
+        'ver': VERSION
+    })
+    return base64.urlsafe_b64encode(data.encode('utf-8')).decode('utf-8')
+
+#HELP_URL = f'https://doki-nordic.github.io/bt-monitor-rtt/help-{VERSION}.html'
+HELP_URL = f'file:///home/doki/my/tmp/a.html'
+HELP_URL_WITH_DATA = f'{HELP_URL}#{get_help_script_data()}'
+
+
+#endregion
+
+
 #region Extcap Plugin configuration
 
 
 INTERFACE_NAME = 'bt_hci_rtt'
-DISPLAY_NAME = 'Bluetooth HCI monitor packets over RTT'
-JLINK_DEVICES_URL = 'https://www.segger.com/supported-devices/jlink/'
+DISPLAY_NAME = 'Bluetooth HCI monitor over RTT'
 
 EXTCAP_INTERFACES = dedent('''
-    extcap {version=''' + VERSION + '''}{help=''' + JLINK_DEVICES_URL +'''}
+    extcap {version=''' + VERSION + '''}{help=''' + HELP_URL_WITH_DATA +'''}
     interface {value=''' + INTERFACE_NAME + '''}{display=''' + DISPLAY_NAME + '''}
     ''').strip()
 
@@ -50,7 +73,7 @@ EXTCAP_CONFIG = dedent('''
     arg {number=3}{call=--snr}{display=Serial Number}{tooltip=Fill if you have more devices connected}{type=string}{required=false}{group=Optional}
     arg {number=4}{call=--addr}{display=RTT Address}{tooltip=Single address or ranges <Rangestart> <RangeSize>[, <Range1Start> <Range1Size>, ...]}{type=string}{required=false}{group=Optional}
     arg {number=6}{call=--logger}{display=JLinkRTTLogger Executable}{tooltip=Select your executable if you do not have in your PATH}{type=fileselect}{mustexist=true}{group=Optional}
-    arg {number=7}{call=--note-to-log}{display=Convert System Note to Log}{tooltip=System Node packet will be visible as special User Logging packet}{type=boolean}{group=Optional}
+    arg {number=7}{call=--note-to-log}{display=Convert System Note to Log}{tooltip=System Note packet will be visible as special User Logging packet}{type=boolean}{group=Optional}
     arg {number=8}{call=--debug}{display=Debug output}{tooltip=This is only for debuging this extcap plugin}{type=fileselect}{mustexist=false}{group=Debug}
     arg {number=9}{call=--debug-logger}{display=JLinkRTTLogger stdout}{tooltip=File that will contain standard output from JLinkRTTLogger}{type=fileselect}{mustexist=false}{group=Debug}
     value {arg=1}{value=SWD}{display=SWD}{default=true}
@@ -63,35 +86,39 @@ EXTCAP_CONFIG = dedent('''
 #endregion
 
 
-#region Help message
+#region First time configuration
 
 
-def print_help_message():
-    help = dedent(f'''
-        This is an extcap plugin for Wireshark. It allows you to capture HCI packets
-        over Segger J-Link RTT. Place the script in appropriate plugins directory.
-        In Wireshark, see: Help => About Wireshark => Folders => Personal Extcap path.
-
-        You need SEGGER J-Link software and drivers installed to use this plugin.
-        It requires JLinkRTTLogger{ ".exe" if is_windows else "" } executable.
-        ''')
+def first_time_config():
+    script_file = Path(__file__)
+    in_extcap_dir = (script_file.parent.name.lower() == 'extcap')
     if is_windows:
-        help += dedent('''
-            In Windows, you have to run this script once after placing it the plugins
-            directory. It will setup the environment and download necessary modules.
-            To force setup, use "--initial-setup" option.
-            ''')
+        bat_file = script_file.with_suffix('.bat')
+        venv_dir = Path(str(script_file.with_suffix('')) + '_venv')
+        setup_needed = ((not bat_file.exists()) or (not venv_dir.exists()) and in_extcap_dir)
+        if setup_needed or args.initial_setup:
+            if args.initial_setup:
+                windows_remove_setup(bat_file, venv_dir)
+            windows_initial_setup(bat_file, venv_dir)
+            return
     else:
-        stat = os.stat(__file__)
-        if (stat.st_mode & 0o100) == 0:
+        stat = script_file.stat()
+        if ((stat.st_mode & 0o100) == 0) and in_extcap_dir:
             try:
                 os.chmod(__file__, stat.st_mode | 0o100)
             except:
-                help = help.strip() + dedent(f'''
-                    Make sure this file has an execute permissions, e.g.:
-                    "chmod +x {Path(__file__).name}"
-                    ''')
-    print(help)
+                print(dedent(f'''
+                    Cannot set executable flag for the script file.
+                    Try to do it manually, e.g.:
+                        chmod +x {Path(__file__).name}
+                    '''))
+            print('File executable permission set. You can use it in Wireshark now.')
+            return
+    if in_extcap_dir:
+        print('\nThe plugin is configured. You can start using it in the Wireshark.')
+    print('\nFor more information, see:')
+    print(HELP_URL, '\n')
+    Process.set_exit_code(98)
 
 
 #endregion
@@ -877,7 +904,7 @@ class Capture:
             raise SignalTerminated(SignalReason.CAPTURE_STOP)
 
         cmd = [
-            args.logger if args.logger.strip() else 'JLinkRTTLogger',
+            args.logger if args.logger.strip() else 'JLinkRTTLogger', #TODO: Search for JLinkRTTLogger in default locations if it is not in args and JLinkRTTLogger -? fails
             '-Device', args.device.strip(),
             '-If', args.iface.strip(),
             '-Speed', args.speed.strip(),
@@ -1061,19 +1088,7 @@ def main():
     elif is_windows and args.pip_install:
         windows_pip_install()
     else:
-        if is_windows:
-            script_file = Path(__file__)
-            bat_file = script_file.with_suffix('.bat')
-            venv_dir = Path(str(script_file.with_suffix('')) + '_venv')
-            setup_needed = ((not bat_file.exists()) or (not venv_dir.exists()) and
-                            (script_file.parent.name.lower() == 'extcap'))
-            if setup_needed or args.initial_setup:
-                if args.initial_setup:
-                    windows_remove_setup(bat_file, venv_dir)
-                windows_initial_setup(bat_file, venv_dir)
-                return
-        print_help_message()
-        Process.set_exit_code(98)
+        first_time_config()
 
 try:
     main()
