@@ -1,0 +1,198 @@
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Roboto+Mono:wght@400;700&family=Roboto:wght@400;700&display=swap');
+
+body {
+    font-family: 'Roboto', sans-serif;
+    font-size: 16px;
+    color: #444;
+    padding: 0 0 2em;
+    line-height: 1.5;
+    word-wrap: break-word;
+    margin: 0px;
+}
+
+div#container {
+    margin: 5em auto;
+    padding: 0.5em;
+    max-width: 62em;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: 'Libre Baskerville', serif;
+    padding-right: 1em;
+    border-bottom: 1px solid #b4b4b4;
+    color: black;
+}
+
+p,
+ol,
+ul {
+}
+
+a {
+    color: #38687c;
+}
+
+a:hover {
+    color: #000000;
+    background-color: #e3f2f7;
+}
+
+code {
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    white-space: break-spaces;
+    background-color: #F0F0F0;
+    border-radius: 0.4em;
+}
+
+pre>code {
+    border: 1px solid #e0e0e0;
+    padding: 0.9em 0.6em;
+    overflow: auto;
+    background-color: #F0F0F0;
+    border-radius: 0.3em;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 90%;
+    display: block;
+    white-space: nowrap;
+}
+
+div.clipboard-copy {
+    display: none;
+}
+
+pre:hover div.clipboard-copy {
+    display: block;
+}
+
+div.clipboard-copy {
+    font-size: 180%;
+    margin: 0 0 0 auto;
+    width: 1.5em;
+    height: 0px;
+    position: relative;
+    text-align: center;
+    top: -1.0em;
+    left: -0.2em;
+}
+
+div.clipboard-copy>div {
+    position: relative;
+    background-color: #535353;
+    border-radius: 0.2em;
+    color: white;
+    padding: 0.2em;
+    cursor: pointer;
+}
+
+#clipboard-info {
+    position: fixed;
+    top: 40px;
+    width: 400px;
+    text-align: center;
+    margin: 0 auto;
+    background: #535353;
+    left: calc(50% - 200px);
+    padding: 1em 0;
+    font-size: 140%;
+    color: white;
+    border-radius: 0.6em;
+    z-index: 1000;
+}
+
+div#toc {
+    display: block;
+    width: 22em;
+    float: right;
+    background-color: #f2f7fa;
+    box-shadow: 0.1em 0.1em 0.5em #00000046;
+    margin: 0 0 2em 1em;
+    font-size: 90%;
+    line-height: 1.1;
+    padding: 0.7em;
+}
+
+div#toc ul {
+    margin: 0;
+    padding: 0 0 0 1.7em;
+}
+
+div#toc li {
+    margin: 0.7em 0;
+}
+
+div#toc a {
+    text-decoration: none;
+    color: #444;
+}
+
+div#toc a:hover {
+    text-decoration: underline;
+    color: #444;
+    background: none;
+}
+
+
+div.admonition-info,
+div.admonition-warning {
+    background-color: #daecf7;
+    border: 1px solid #4c8ba7;
+    margin: 1em 0;
+}
+
+div.admonition-info-title,
+div.admonition-warning-title {
+    padding: 0.2em 0.8em;
+    background-color: #4c8ba7;
+    font-size: 90%;
+    color: white;
+    font-weight: bold;
+}
+
+div.admonition-info-body,
+div.admonition-warning-body {
+    padding: 0 1.2em 0 1.2em;
+}
+
+div.admonition-warning {
+    background-color: #f7edda;
+    border-color: #d48e26;
+}
+
+div.admonition-warning-title {
+    background-color: #d48e26;
+    color: white;
+}
+
+#menu {
+    text-align: center;
+    font-size: 120%;
+    background-color: #212527;
+    padding: 0.7em 0;
+    color: white;
+    position: fixed;
+    top: 0px;
+    width: 100%;
+}
+
+#menu a {
+    text-decoration: none;
+    color: white;
+}
+
+#menu a:hover {
+    text-decoration: none;
+    color: white;
+    background: #444;
+}
+
+#menu p {
+    margin: 0;
+    padding: 0;
+}
