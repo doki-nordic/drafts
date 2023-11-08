@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from pathlib import Path
 import shutil
 import subprocess
@@ -6,6 +8,7 @@ from conf import url, projects, default_project, empty_project, default_hours
 from datetime import date, datetime, timedelta
 import re
 import os
+import sys
 import os.path
 import json
 import urllib.request
@@ -30,22 +33,65 @@ def download_chrome_driver():
 		return
 	ver = m.group(0)
 	print(f'Current version: {ver}')
-	with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{ver}') as fd:
-		driver_ver = fd.read().decode('utf-8')
-	m = re.match(f'[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?', driver_ver)
-	if m is None:
-		print('Cannot download chromedriver automatically!')
-		return
-	print(f'Chromedriver version: {driver_ver}')
-	zip_path = Path(__file__).parent / 'chromedriver_linux64.zip'
-	with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/{driver_ver}/chromedriver_linux64.zip') as src:
+	with urllib.request.urlopen(f'https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json') as fd:
+		versions = json.load(fd)
+		fd.close()
+	for version in versions['versions']:
+		this_ver = version['version']
+		if (this_ver.startswith(ver) or ver.startswith(this_ver)) and ('chromedriver' in version['downloads']):
+			platforms = version['downloads']['chromedriver']
+			break
+	else:
+		print('Can\'t download correct version automatically')
+		exit(1)
+
+	for platform in platforms:
+		if (sys.platform == 'win32') and platform['platform'] == 'win64':
+			break
+		elif (sys.platform == 'linux') and platform['platform'] == 'linux64':
+			break
+		elif (sys.platform == 'mac-x64') and platform['platform'] == 'darwin':
+			break
+	else:
+		print('Can\'t download correct platform automatically')
+		exit(1)
+
+	print(platform['url'])
+	zip_path = Path(__file__).parent / 'chromedriver.zip'
+	with urllib.request.urlopen(platform['url']) as src:
 		with open(zip_path, 'wb') as dst:
 			shutil.copyfileobj(src, dst)
 	with zipfile.ZipFile(zip_path, 'r') as zip_ref:
 		zip_ref.extractall(Path(__file__).parent)
-	os.chmod(Path(__file__).parent / 'chromedriver', 0o755)
-	cp = subprocess.run([str(Path(__file__).parent / 'chromedriver'), '--version'], check=True)
+		for name in zip_ref.namelist():
+			p = Path(name)
+			if (p.name.count('chromedriver') == 1) and (p.suffix == '' or p.suffix.upper() == '.EXE'):
+				exe_name = p
+	expected = Path('chromedriver')
+	if sys.platform == 'win32': expected.suffix = '.exe'
+	if (exe_name != expected):
+		shutil.copyfile(Path(__file__).parent / exe_name, Path(__file__).parent / expected)
+	os.chmod(Path(__file__).parent / expected, 0o755)
+	cp = subprocess.run([str(Path(__file__).parent / expected), '--version'], check=True)
 	print('Automatic download successful. You can now restart the script.')
+
+
+	# with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/LATEST_RELEASE_{ver}') as fd:
+	# 	driver_ver = fd.read().decode('utf-8')
+	# m = re.match(f'[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?', driver_ver)
+	# if m is None:
+	# 	print('Cannot download chromedriver automatically!')
+	# 	return
+	# print(f'Chromedriver version: {driver_ver}')
+	# zip_path = Path(__file__).parent / 'chromedriver_linux64.zip'
+	# with urllib.request.urlopen(f'https://chromedriver.storage.googleapis.com/{driver_ver}/chromedriver_linux64.zip') as src:
+	# 	with open(zip_path, 'wb') as dst:
+	# 		shutil.copyfileobj(src, dst)
+	# with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+	# 	zip_ref.extractall(Path(__file__).parent)
+	# os.chmod(Path(__file__).parent / 'chromedriver', 0o755)
+	# cp = subprocess.run([str(Path(__file__).parent / 'chromedriver'), '--version'], check=True)
+	# print('Automatic download successful. You can now restart the script.')
 
 script_dir = dirname(os.path.realpath(__file__))
 
