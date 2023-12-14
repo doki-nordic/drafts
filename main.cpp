@@ -10,6 +10,7 @@
 #include "shmem.h"
 #include "events.h"
 
+struct icmsg_instance;
 
 struct tx_write_memory
 {
@@ -42,9 +43,18 @@ struct tx_fifo {
     volatile const struct rx_write_memory* rx_write;
 };
 
+struct icmsg_callbacks {
+    void (*connected)(struct icmsg_instance *instance, void* user_data);
+    void (*remote_reset)(struct icmsg_instance *instance, void* user_data);
+    void (*received)(uint8_t *buffer, uint32_t size, struct icmsg_instance *instance, void* user_data);
+    void* user_data;
+};
+
 struct icmsg_instance {
     struct rx_fifo rx;
     struct tx_fifo tx;
+    struct icmsg_callbacks* callbacks;
+    bool connected;
 };
 
 void reset_rx(struct rx_fifo *rx) {
@@ -70,19 +80,88 @@ void reset_tx(struct tx_fifo *tx) {
     ShMem::flushRange((void*)&tx->tx_write->sync_value2, sizeof(tx->tx_write->sync_value2));
 }
 
-void icmsg_callback(void* data) {
-    struct rx_fifo *rx = &((struct icmsg_instance *)data)->rx;
-    struct tx_fifo *tx = &((struct icmsg_instance *)data)->tx;
+void receive_packet(struct icmsg_instance *instance, uint32_t remote_write_index)
+{
+    struct rx_fifo *rx = &instance->rx;
+    struct tx_fifo *tx = &instance->tx;
 
-    ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
-    uint32_t sync_value2 = rx->tx_write->sync_value2;
-    if (sync_value2 != rx->sync_value) {
-        // ...
+    uint32_t total_incoming_words;
+    if (remote_write_index >= rx->read_index) {
+        total_incoming_words = remote_write_index - rx->read_index;
+    } else {
+        total_incoming_words = rx->size_words - (rx->read_index - remote_write_index);
+    }
+
+    ShMem::invalidateRange((void*)&rx->tx_write->buffer[rx->read_index], sizeof(uint32_t));
+    uint32_t header = rx->tx_write->buffer[rx->read_index];
+    uint32_t size = header & 0xFFFFFF;
+    uint32_t sync_value_lower = (header >> 24) & 0x3F;
+    rx->read_index++;
+
+    uint32_t packet_words = 1 + (size + 3) / 4;
+    if (packet_words > total_incoming_words) {
+        // TODO: report error
+        rx->read_index = remote_write_index;
     }
 }
 
 
-int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_size, void* rx_buffer, uint32_t rx_size, void* rx_event, void* tx_event) {
+void icmsg_callback(void* data) {
+    struct icmsg_instance *instance = (struct icmsg_instance *)data;
+    struct rx_fifo *rx = &instance->rx;
+    struct tx_fifo *tx = &instance->tx;
+
+    bool redo;
+
+    do {
+        redo = false;
+
+        // Check incoming sync value. If updated, start new session.
+        ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
+        if (rx->tx_write->sync_value2 != rx->sync_value) {
+            // Reset RX fifo.
+            reset_rx(rx);
+            // If instance was already fully initialized, inform about remote reset.
+            if (instance->connected && instance->callbacks->remote_reset) {
+                instance->callbacks->remote_reset(instance, instance->callbacks->user_data);
+            }
+            // Wake up remote to finalize initialization on remote side.
+            fire_event(tx->tx_event);
+            redo = true;
+        }
+
+        // If not connected yet, check if remote initialized receiver for this session.
+        if (!instance->connected) {
+            ShMem::invalidateRange((void*)&tx->rx_write->sync_value1, sizeof(tx->rx_write->sync_value1));
+            // If sync value is as expected, remote is ready to receive, so call the callback.
+            if (tx->sync_value == tx->rx_write->sync_value1) {
+                instance->connected = true;
+                if (instance->callbacks->connected) {
+                    instance->callbacks->connected(instance, instance->callbacks->user_data);
+                }
+                redo = true;
+            }
+        }
+
+        // If there something in FIFO, read all.
+        uint32_t remote_write_index = rx->tx_write->write_index % rx->size_words;
+        if (remote_write_index != rx->read_index) {
+            while (remote_write_index != rx->read_index) {
+                receive_packet(instance, remote_write_index);
+            }
+            // Update read index, so the remote will know that packets were received.
+            rx->rx_write->read_index = rx->read_index;
+            ShMem::flushRange((void*)&rx->rx_write->read_index, sizeof(rx->rx_write->read_index));
+            // Wake up remote in case it is waiting for more available space in FIFO.
+            fire_event(tx->tx_event);
+            redo = true;
+        }
+
+    } while (redo);
+}
+
+
+int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_size, void* rx_buffer, uint32_t rx_size, void* rx_event, void* tx_event, struct icmsg_callbacks* callbacks) {
 
     // Align the buffer to cache line size
     uint8_t* tx_ptr = (uint8_t*)ROUND_UP((uintptr_t)tx_buffer, SHMEM_CACHE_SIZE);
@@ -95,6 +174,8 @@ int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_siz
     // Save events
     instance->rx.rx_event = rx_event;
     instance->tx.tx_event = tx_event;
+    instance->connected = false;
+    instance->callbacks = callbacks;
 
     // Assign pointers to TX buffer parameter
     instance->rx.rx_write = (struct rx_write_memory*)tx_ptr;
