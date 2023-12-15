@@ -1,6 +1,7 @@
 #ifndef SHMEM_H
 #define SHMEM_H
 
+#include <iostream>
 #include <stdint.h>
 #include <cstdio>
 #include <cstring>
@@ -82,5 +83,33 @@ public:
 
 };
 
+#define TEST(cond) if (!(cond)) { std::fprintf(stderr, "TEST FAILED %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(100); }
+
+static void testShMem() {
+    ShMem shmem(MAX_MEM_SIZE);
+    uint8_t* core1 = (uint8_t*)shmem.getInstance();
+    uint8_t* core2 = (uint8_t*)shmem.getInstance();
+
+    for (int o = 0; o < MAX_MEM_SIZE; o += MAX_MEM_SIZE / 8) {
+        std::memcpy(core1 + o, "ABCDEFGHIJ", 10);
+        std::memcpy(core2 + o, "JIHGFEDCBA", 10);
+        TEST(std::memcmp(core1 + o, "ABCDEFGHIJ", 10) == 0);
+        TEST(std::memcmp(core2 + o, "JIHGFEDCBA", 10) == 0);
+        ShMem::flushRange(core1 + o, 1);
+        ShMem::flushRange(core2 + o + 9, 1);
+        TEST(std::memcmp(core1 + o, "ABCDEFGHIJ", 10) == 0);
+        TEST(std::memcmp(core2 + o, "JIHGFEDCBA", 10) == 0);
+        ShMem::invalidateRange(core1 + o, 8);
+        TEST(std::memcmp(core1 + o, "ABCDEFGHIJ", 10) == 0);
+        ShMem::invalidateRange(core1 + o + 9, 1);
+        TEST(std::memcmp(core1 + o, "ABCDEFGHBA", 10) == 0);
+        ShMem::invalidateRange(core2 + o + 8, 100);
+        TEST(std::memcmp(core2 + o, "JIHGFEDCBA", 10) == 0);
+        ShMem::invalidateRange(core2 + o + 7, 100);
+        TEST(std::memcmp(core2 + o, "ABCDEFGHBA", 10) == 0);
+    }
+
+    std::cout << "Shared memory emulator test success." << std::endl;
+}
 
 #endif

@@ -9,6 +9,7 @@
 
 #include "shmem.h"
 #include "events.h"
+#include "work.h"
 
 #define MAX_RX_DATA_SIZE_LOG2 10
 #define MAX_TX_DATA_SIZE_LOG2 23
@@ -63,7 +64,9 @@ struct icmsg_instance {
     struct tx_fifo tx;
     struct icmsg_callbacks* callbacks;
     bool connected;
+    struct k_work work;
 };
+
 
 void reset_rx(struct icmsg_instance* instance) {
     struct rx_fifo *rx = &instance->rx;
@@ -158,61 +161,64 @@ void receive_one_packet(struct icmsg_instance *instance, uint32_t remote_write_i
     instance->callbacks->received(temp_buffer, size, instance, instance->callbacks->user_data);
 }
 
-
-void icmsg_callback(void* data) {
-    struct icmsg_instance *instance = (struct icmsg_instance *)data;
+static void icmsg_work_handler(struct k_work *work)
+{
+    struct icmsg_instance *instance = CONTAINER_OF(work, struct icmsg_instance, work);
     struct rx_fifo *rx = &instance->rx;
     struct tx_fifo *tx = &instance->tx;
 
-    bool redo;
+    bool redo = false;
 
-    do {
-        redo = false;
+    // Check incoming sync value. If updated, start new session.
+    ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
+    if (rx->tx_write->sync_value2 != rx->sync_value) {
+        // Reset RX fifo.
+        reset_rx(instance);
+        // If instance was already fully initialized, inform about remote reset.
+        if (instance->connected && instance->callbacks->remote_reset) {
+            instance->callbacks->remote_reset(instance, instance->callbacks->user_data);
+        }
+        // Wake up remote to finalize initialization on remote side.
+        fire_event(tx->tx_event);
+        redo = true;
+    }
 
-        // Check incoming sync value. If updated, start new session.
-        ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
-        if (rx->tx_write->sync_value2 != rx->sync_value) {
-            // Reset RX fifo.
-            reset_rx(instance);
-            // If instance was already fully initialized, inform about remote reset.
-            if (instance->connected && instance->callbacks->remote_reset) {
-                instance->callbacks->remote_reset(instance, instance->callbacks->user_data);
+    // If not connected yet, check if remote initialized receiver for this session.
+    if (!instance->connected) {
+        ShMem::invalidateRange((void*)&tx->rx_write->sync_value1, sizeof(tx->rx_write->sync_value1));
+        // If sync value is as expected, remote is ready to receive, so call the callback.
+        if (tx->sync_value == tx->rx_write->sync_value1) {
+            instance->connected = true;
+            if (instance->callbacks->connected) {
+                instance->callbacks->connected(instance, instance->callbacks->user_data);
             }
-            // Wake up remote to finalize initialization on remote side.
-            fire_event(tx->tx_event);
             redo = true;
         }
+    }
 
-        // If not connected yet, check if remote initialized receiver for this session.
-        if (!instance->connected) {
-            ShMem::invalidateRange((void*)&tx->rx_write->sync_value1, sizeof(tx->rx_write->sync_value1));
-            // If sync value is as expected, remote is ready to receive, so call the callback.
-            if (tx->sync_value == tx->rx_write->sync_value1) {
-                instance->connected = true;
-                if (instance->callbacks->connected) {
-                    instance->callbacks->connected(instance, instance->callbacks->user_data);
-                }
-                redo = true;
-            }
+    // If there something in FIFO, read all.
+    uint32_t remote_write_index = rx->tx_write->write_index % rx->size_words;
+    if (remote_write_index != rx->read_index) {
+        while (remote_write_index != rx->read_index) {
+            receive_one_packet(instance, remote_write_index);
         }
+        // Update read index, so the remote will know that packets were received.
+        rx->rx_write->read_index = rx->read_index;
+        ShMem::flushRange((void*)&rx->rx_write->read_index, sizeof(rx->rx_write->read_index));
+        // Wake up remote in case it is waiting for more available space in FIFO.
+        fire_event(tx->tx_event);
+        redo = true;
+    }
 
-        // If there something in FIFO, read all.
-        uint32_t remote_write_index = rx->tx_write->write_index % rx->size_words;
-        if (remote_write_index != rx->read_index) {
-            while (remote_write_index != rx->read_index) {
-                receive_one_packet(instance, remote_write_index);
-            }
-            // Update read index, so the remote will know that packets were received.
-            rx->rx_write->read_index = rx->read_index;
-            ShMem::flushRange((void*)&rx->rx_write->read_index, sizeof(rx->rx_write->read_index));
-            // Wake up remote in case it is waiting for more available space in FIFO.
-            fire_event(tx->tx_event);
-            redo = true;
-        }
-
-    } while (redo);
+    if (redo) {
+        k_work_submit(&instance->work);
+    }
 }
 
+void icmsg_callback(void* data) {
+    struct icmsg_instance *instance = (struct icmsg_instance *)data;
+    k_work_submit(&instance->work);
+}
 
 int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_size, void* rx_buffer, uint32_t rx_size, void* rx_event, void* tx_event, struct icmsg_callbacks* callbacks) {
 
@@ -230,6 +236,7 @@ int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_siz
     instance->connected = false;
     instance->callbacks = callbacks;
     instance->tx.max_data_size = 0;
+    k_work_init(&instance->work, icmsg_work_handler);
 
     // Assign pointers to TX buffer parameter
     instance->rx.rx_write = (struct rx_write_memory*)tx_ptr;
@@ -315,15 +322,27 @@ int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t siz
 
     // Ping remote that new packet is available.
     fire_event(tx->tx_event);
+
+    return 0;
 }
 
 std::mutex eventMutex;
 std::condition_variable eventCV;
 std::set<Event*> events;
+volatile bool stopEventThreadRequest = false;
+std::shared_ptr<std::thread> eventThread;
+
+std::mutex workMutex;
+std::queue<k_work*> system_work_queue;
+void* workEvent;
 
 int main()
 {
-    std::thread eventThread(runEventThread);
-    eventThread.join();
+    init_work_queue();
+    eventThread = std::make_shared<std::thread>(runEventThread);
+    //testShMem();
+    //testEvents();
+    stopEventThread();
+    return 0;
 }
 
