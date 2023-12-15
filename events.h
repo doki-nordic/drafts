@@ -11,6 +11,7 @@
 #include <chrono>
 
 #include "shmem.h"
+#include "log.h"
 
 struct Event {
     bool active;
@@ -26,23 +27,33 @@ extern volatile bool stopEventThreadRequest;
 extern std::shared_ptr<std::thread> eventThread;
 
 static void runEventThread() {
+    setThreadName("event");
     while (true) {
         std::unique_lock lk(eventMutex);
+        LOG("Event CV - waiting");
         eventCV.wait(lk);
+        LOG("Event CV - signaled");
         bool rerun;
         do {
             std::atomic_thread_fence(std::memory_order_seq_cst);
             if (stopEventThreadRequest) {
+                LOG("Event thread stopped");
                 return;
             }
             rerun = false;
             for (auto event: events) {
                 if (event->active) {
+                    LOG("Event %s active", A(event));
+                    rerun = true;
                     event->active = false;
                     if (event->callback) {
+                        lk.unlock();
                         event->callback(event->data);
+                        lk.lock();
+                        break;
                     }
-                    rerun = true;
+                } else {
+                    //LOG("Event %s inactive", A(event));
                 }
             }
         } while (rerun);
@@ -51,6 +62,7 @@ static void runEventThread() {
 
 static void stopEventThread() {
     using namespace std::chrono_literals;
+    LOG("Stop event thread request");
     std::this_thread::sleep_for(0.1s);
     std::unique_lock lk(eventMutex);
     stopEventThreadRequest = true;
@@ -64,12 +76,14 @@ static void* create_event(void (*callback)(void*) = nullptr, void* data = nullpt
     std::unique_lock lk(eventMutex);
     auto ev = new Event(callback, data);
     events.insert(ev);
+    LOG("Event %s created", A(ev));
     return (void*)ev;
 }
 
 static void fire_event(void* event) {
     std::unique_lock lk(eventMutex);
     auto ev = (Event*)event;
+    LOG("Event %s %s", A(ev), ev->active ? "re-triggered" : "triggered");
     ev->active = true;
     lk.unlock();
     eventCV.notify_one();
@@ -80,6 +94,7 @@ static void set_event_callback(void* event, void (*callback)(void*), void* data 
     auto ev = (Event*)event;
     ev->callback = callback;
     ev->data = data;
+    LOG("Event %s callback is %s", A(ev), A(callback));
 }
 
 static void testEvents() {
@@ -134,6 +149,7 @@ static void testEvents() {
             }
         }
         static void run1(TestData* data) {
+            setThreadName("run1");
             data->counter = 10;
             fire_event(data->event1);
             std::this_thread::sleep_for(0.2s);
@@ -153,6 +169,7 @@ static void testEvents() {
             fire_event(data->event2);
         }
         static void run2(TestData* data) {
+            setThreadName("run2");
             std::this_thread::sleep_for(2s);
             data->counter = 40;
             fire_event(data->event1);

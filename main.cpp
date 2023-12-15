@@ -10,6 +10,7 @@
 #include "shmem.h"
 #include "events.h"
 #include "work.h"
+#include "log.h"
 
 #define MAX_RX_DATA_SIZE_LOG2 10
 #define MAX_TX_DATA_SIZE_LOG2 23
@@ -17,6 +18,8 @@
 #define MAX_TX_DATA_SIZE (1 << MAX_TX_DATA_SIZE_LOG2)
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+using namespace std::chrono_literals;
 
 struct icmsg_instance;
 
@@ -62,7 +65,7 @@ struct icmsg_callbacks {
 struct icmsg_instance {
     struct rx_fifo rx;
     struct tx_fifo tx;
-    struct icmsg_callbacks* callbacks;
+    const struct icmsg_callbacks* callbacks;
     bool connected;
     struct k_work work;
 };
@@ -71,13 +74,16 @@ struct icmsg_instance {
 void reset_rx(struct icmsg_instance* instance) {
     struct rx_fifo *rx = &instance->rx;
     struct tx_fifo *tx = &instance->tx;
+    LOG("%s: Reset RX", A(instance));
     ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
     rx->read_index = rx->tx_write->write_index % rx->size_words;
     rx->rx_write->read_index = rx->read_index;
+    LOG("%s: Read index %d", A(instance), rx->read_index);
     ShMem::flushRange((void*)&rx->rx_write->read_index, sizeof(rx->rx_write->read_index));
     rx->sync_value = rx->tx_write->sync_value2;
     rx->rx_write->sync_value1 = rx->sync_value;
     tx->max_data_size = 1 << (rx->sync_value >> 27);
+    LOG("%s: Sync %08X, max data size %d", A(instance), rx->sync_value, tx->max_data_size);
     ShMem::flushRange((void*)&rx->rx_write->sync_value1, sizeof(rx->rx_write->sync_value1));
 }
 
@@ -167,15 +173,19 @@ static void icmsg_work_handler(struct k_work *work)
     struct rx_fifo *rx = &instance->rx;
     struct tx_fifo *tx = &instance->tx;
 
+    LOG("%s: handler", A(instance));
+
     bool redo = false;
 
     // Check incoming sync value. If updated, start new session.
     ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
     if (rx->tx_write->sync_value2 != rx->sync_value) {
+        LOG("%s: remote session started", A(instance));
         // Reset RX fifo.
         reset_rx(instance);
         // If instance was already fully initialized, inform about remote reset.
         if (instance->connected && instance->callbacks->remote_reset) {
+            LOG("%s: remote reset callback", A(instance));
             instance->callbacks->remote_reset(instance, instance->callbacks->user_data);
         }
         // Wake up remote to finalize initialization on remote side.
@@ -198,6 +208,7 @@ static void icmsg_work_handler(struct k_work *work)
 
     // If there something in FIFO, read all.
     uint32_t remote_write_index = rx->tx_write->write_index % rx->size_words;
+    LOG("%s: remote write index %d, read index %d", A(instance), remote_write_index, rx->read_index);
     if (remote_write_index != rx->read_index) {
         while (remote_write_index != rx->read_index) {
             receive_one_packet(instance, remote_write_index);
@@ -217,10 +228,11 @@ static void icmsg_work_handler(struct k_work *work)
 
 void icmsg_callback(void* data) {
     struct icmsg_instance *instance = (struct icmsg_instance *)data;
+    LOG("%s: signaled", A(instance));
     k_work_submit(&instance->work);
 }
 
-int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_size, void* rx_buffer, uint32_t rx_size, void* rx_event, void* tx_event, struct icmsg_callbacks* callbacks) {
+int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_size, void* rx_buffer, uint32_t rx_size, void* rx_event, void* tx_event, const struct icmsg_callbacks* callbacks) {
 
     // Align the buffer to cache line size
     uint8_t* tx_ptr = (uint8_t*)ROUND_UP((uintptr_t)tx_buffer, SHMEM_CACHE_SIZE);
@@ -272,6 +284,7 @@ int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t siz
 
     // Check if size is acceptable.
     if (size > MAX_TX_DATA_SIZE || size > tx->max_data_size) {
+        LOG("%s Too big packet data, size %d, hard limit %d, remote limit %d", A(instance), size, MAX_TX_DATA_SIZE, tx->max_data_size);
         return -1; //return -ENOMEM;
     }
 
@@ -290,6 +303,7 @@ int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t siz
     uint32_t packet_words = (size + (3 + 4)) / 4;
 
     if (packet_words > available_words) {
+        LOG("%s Too many words to send, packet words %d, available words %d", A(instance), packet_words, available_words);
         return -1; //return -ENOMEM; // TODO: wait if timeout is required
     }
 
@@ -314,17 +328,134 @@ int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t siz
         tx->write_index = (size + 3) / 4;
     } else {
         // No wrapping, so just update the write index.
-        tx->write_index += ((copy_bytes + 3) / 4) % tx->size_words;
+        tx->write_index = (tx->write_index + (copy_bytes + (3 + 4)) / 4) % tx->size_words;
     }
 
     // Update write index in shared memory, so the remote can read it.
     tx->tx_write->write_index = tx->write_index;
+    ShMem::flushRange((void*)&tx->tx_write->write_index, sizeof(tx->tx_write->write_index));
 
     // Ping remote that new packet is available.
     fire_event(tx->tx_event);
 
     return 0;
 }
+
+uint32_t* preview1;
+uint32_t* preview2;
+
+struct TestPing {
+
+    static const uint32_t FIFO_SIZE = 64 + 4 + 8 + 8;
+
+    static const icmsg_callbacks sendingCallbacks;
+    static const icmsg_callbacks respondingCallbacks;
+
+    static void sendingCore(void* mem, void* rx_event, void* tx_event) {
+        setThreadName("sending");
+        const char *text;
+        icmsg_instance icmsg;
+        A(&icmsg, "sendingICmsg");
+        LOG("S - initializing...");
+        icmsg_init(&icmsg, (uint8_t*)mem, FIFO_SIZE, (uint8_t*)mem + FIFO_SIZE, FIFO_SIZE, rx_event, tx_event, &sendingCallbacks);
+        std::this_thread::sleep_for(0.5s);
+        LOG("S - sending Test1");
+        icmsg_send(&icmsg, "1. Test1", 8);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "2. Test2", 8);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "3. Next", 7);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "4. Other string", 15);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "5. Next line", 12);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "6. Some long text that will be send", 35);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_init(&icmsg, (uint8_t*)mem, FIFO_SIZE, (uint8_t*)mem + FIFO_SIZE, FIFO_SIZE, rx_event, tx_event, &sendingCallbacks);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "7. This is even longer text that we have to send to do ping-pong", 64);
+        std::this_thread::sleep_for(0.2s);
+        icmsg_send(&icmsg, "8. The end", 10);
+        std::this_thread::sleep_for(1s);
+        LOG("S - done thread");
+    }
+
+    static void respondingCore(void* mem, void* rx_event, void* tx_event) {
+        setThreadName("responding");
+        icmsg_instance icmsg;
+        A(&icmsg, "respondingICmsg");
+        LOG("R - initializing...");
+        icmsg_init(&icmsg, (uint8_t*)mem + FIFO_SIZE, FIFO_SIZE, (uint8_t*)mem, FIFO_SIZE, rx_event, tx_event, &respondingCallbacks);
+        std::this_thread::sleep_for(1s);
+        icmsg_init(&icmsg, (uint8_t*)mem + FIFO_SIZE, FIFO_SIZE, (uint8_t*)mem, FIFO_SIZE, rx_event, tx_event, &respondingCallbacks);
+        std::this_thread::sleep_for(5s);
+        LOG("R - done thread");
+    }
+
+    static void sendingCore_connected(struct icmsg_instance *instance, void* user_data)
+    {
+        printf("sending core - connected\n");
+    }
+
+    static void sendingCore_remote_reset(struct icmsg_instance *instance, void* user_data)
+    {
+        printf("sending core - remote reset\n");
+    }
+
+    static void sendingCore_received(uint8_t *buffer, uint32_t size, struct icmsg_instance *instance, void* user_data)
+    {
+        printf("Pong %d bytes: \"%s\"\n", size, std::string((char*)buffer, size).c_str());
+    }
+
+    static void respondingCore_connected(struct icmsg_instance *instance, void* user_data)
+    {
+        printf("responding core - connected\n");
+    }
+
+    static void respondingCore_remote_reset(struct icmsg_instance *instance, void* user_data)
+    {
+        printf("responding core - remote reset\n");
+    }
+
+    static void respondingCore_received(uint8_t *buffer, uint32_t size, struct icmsg_instance *instance, void* user_data)
+    {
+        printf("Ping %d bytes: \"%s\"\n", size, std::string((char*)buffer, size).c_str());
+        icmsg_send(instance, buffer, size);
+    }
+
+    static void run()
+    {
+        ShMem shmem(2 * FIFO_SIZE);
+        preview1 = (uint32_t*)shmem.startPtr;
+        preview2 = (uint32_t*)((uint8_t*)shmem.startPtr + FIFO_SIZE);
+        std::memset(preview1, 0, FIFO_SIZE);
+        std::memset(preview2, 0, FIFO_SIZE);
+        void* core1 = shmem.getInstance();
+        void* core2 = shmem.getInstance();
+        void* event1 = create_event();
+        void* event2 = create_event();
+        A(event1, "responding=>sending");
+        A(event2, "sending=>responding");
+        std::thread t1(sendingCore, core1, event1, event2);
+        std::thread t2(respondingCore, core2, event2, event1);
+        t1.join();
+        t2.join();
+        LOG("RS - done test");
+    }
+};
+
+const icmsg_callbacks TestPing::sendingCallbacks = {
+    .connected = TestPing::sendingCore_connected,
+    .remote_reset = TestPing::sendingCore_remote_reset,
+    .received = TestPing::sendingCore_received,
+};
+
+const icmsg_callbacks TestPing::respondingCallbacks = {
+    .connected = TestPing::respondingCore_connected,
+    .remote_reset = TestPing::respondingCore_remote_reset,
+    .received = TestPing::respondingCore_received,
+};
 
 std::mutex eventMutex;
 std::condition_variable eventCV;
@@ -336,12 +467,17 @@ std::mutex workMutex;
 std::queue<k_work*> system_work_queue;
 void* workEvent;
 
+std::map<std::thread::id, std::string> threadNames;
+std::map<void*, std::string> addressNames;
+
 int main()
 {
+    setThreadName("main");
     init_work_queue();
     eventThread = std::make_shared<std::thread>(runEventThread);
     //testShMem();
     //testEvents();
+    TestPing::run();
     stopEventThread();
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "events.h"
+#include "log.h"
 
 #define CONTAINER_OF(ptr, type, field)                               \
 	({                                                           \
@@ -61,6 +62,7 @@ static void process_queue(void*) {
 
 static void init_work_queue() {
     workEvent = create_event(process_queue);
+    A(workEvent, "work");
 }
 
 

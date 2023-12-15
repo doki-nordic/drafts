@@ -26,7 +26,7 @@ struct ShMemInstance {
 
 
 class ShMem {
-private:
+public:
     uint8_t *buffer;
     uint8_t *startPtr;
     uint32_t size;
