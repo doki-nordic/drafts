@@ -10,6 +10,13 @@
 #include "shmem.h"
 #include "events.h"
 
+#define MAX_RX_DATA_SIZE_LOG2 10
+#define MAX_TX_DATA_SIZE_LOG2 23
+#define MAX_RX_DATA_SIZE (1 << MAX_RX_DATA_SIZE_LOG2)
+#define MAX_TX_DATA_SIZE (1 << MAX_TX_DATA_SIZE_LOG2)
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 struct icmsg_instance;
 
 struct tx_write_memory
@@ -38,6 +45,7 @@ struct tx_fifo {
     uint32_t sync_value;
     uint32_t write_index;
     uint32_t size_words;
+    uint32_t max_data_size;
     void* tx_event;
     volatile struct tx_write_memory* tx_write;
     volatile const struct rx_write_memory* rx_write;
@@ -57,14 +65,21 @@ struct icmsg_instance {
     bool connected;
 };
 
-void reset_rx(struct rx_fifo *rx) {
+void reset_rx(struct icmsg_instance* instance) {
+    struct rx_fifo *rx = &instance->rx;
+    struct tx_fifo *tx = &instance->tx;
     ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
     rx->read_index = rx->tx_write->write_index % rx->size_words;
     rx->rx_write->read_index = rx->read_index;
     ShMem::flushRange((void*)&rx->rx_write->read_index, sizeof(rx->rx_write->read_index));
     rx->sync_value = rx->tx_write->sync_value2;
     rx->rx_write->sync_value1 = rx->sync_value;
+    tx->max_data_size = 1 << (rx->sync_value >> 27);
     ShMem::flushRange((void*)&rx->rx_write->sync_value1, sizeof(rx->rx_write->sync_value1));
+}
+
+static uint32_t update_sync_value(uint32_t value) {
+    return ((value + 1) & 0x000FFFFF) | (MAX_RX_DATA_SIZE_LOG2 << 27);
 }
 
 void reset_tx(struct tx_fifo *tx) {
@@ -72,37 +87,75 @@ void reset_tx(struct tx_fifo *tx) {
     ShMem::invalidateRange((void*)tx->rx_write, sizeof(struct rx_write_memory));
     tx->write_index = tx->tx_write->write_index % tx->size_words;
     tx->sync_value = tx->tx_write->sync_value2;
-    tx->sync_value++;
+    tx->sync_value = update_sync_value(tx->sync_value);
     if (tx->sync_value == tx->rx_write->sync_value1) {
-        tx->sync_value++;
+        tx->sync_value = update_sync_value(tx->sync_value);
     }
     tx->tx_write->sync_value2 = tx->sync_value;
     ShMem::flushRange((void*)&tx->tx_write->sync_value2, sizeof(tx->tx_write->sync_value2));
 }
 
-void receive_packet(struct icmsg_instance *instance, uint32_t remote_write_index)
+void receive_one_packet(struct icmsg_instance *instance, uint32_t remote_write_index)
 {
     struct rx_fifo *rx = &instance->rx;
     struct tx_fifo *tx = &instance->tx;
 
-    uint32_t total_incoming_words;
-    if (remote_write_index >= rx->read_index) {
-        total_incoming_words = remote_write_index - rx->read_index;
-    } else {
-        total_incoming_words = rx->size_words - (rx->read_index - remote_write_index);
-    }
-
+    // Read and interpret header of the first packet.
     ShMem::invalidateRange((void*)&rx->tx_write->buffer[rx->read_index], sizeof(uint32_t));
     uint32_t header = rx->tx_write->buffer[rx->read_index];
     uint32_t size = header & 0xFFFFFF;
     uint32_t sync_value_lower = (header >> 24) & 0x3F;
-    rx->read_index++;
+    rx->read_index = (rx->read_index + 1) % rx->size_words;
 
-    uint32_t packet_words = 1 + (size + 3) / 4;
-    if (packet_words > total_incoming_words) {
+    // Calculate total remaining words in FIFO (can contain more than one packet).
+    uint32_t total_remaining_words;
+    if (remote_write_index >= rx->read_index) {
+        total_remaining_words = remote_write_index - rx->read_index;
+    } else {
+        total_remaining_words = rx->size_words - (rx->read_index - remote_write_index);
+    }
+
+    // Calculate and validate number of packet data words.
+    uint32_t packet_data_words = (size + 3) / 4;
+    if (packet_data_words > total_remaining_words) {
         // TODO: report error
         rx->read_index = remote_write_index;
+        return;
     }
+
+    // Move read index - consume this packet.
+    uint32_t packet_data_index = rx->read_index;
+    rx->read_index = (rx->read_index + packet_data_words) % rx->size_words;
+
+    // If we have packet from the previous session, silently ignore them.
+    if (sync_value_lower != (tx->sync_value & 0x3F)) {
+        return;
+    }
+
+    // Check if we are able to receive such big packet. If not, skip and report error.
+    if (size > MAX_RX_DATA_SIZE) {
+        // TODO: report error
+        return;
+    }
+
+    // Create VLA on stack to temporarily store the packet data.
+    uint8_t temp_buffer[size];
+    uint32_t size_remaining = size;
+
+    // Copy from shared memory packet data as much as possible.
+    int32_t copy_bytes = MIN(size_remaining, (rx->size_words - packet_data_index) * sizeof(uint32_t));
+    ShMem::invalidateRange((void*)&rx->tx_write->buffer[packet_data_index], copy_bytes);
+    std::memcpy(temp_buffer, (void*)&rx->tx_write->buffer[packet_data_index], copy_bytes);
+    size_remaining -= copy_bytes;
+
+    // If data was wrapped, continue reading from the beginning.
+    if (size_remaining > 0) {
+        ShMem::invalidateRange((void*)rx->tx_write->buffer, size_remaining);
+        std::memcpy(temp_buffer + copy_bytes, (void*)rx->tx_write->buffer, size_remaining);
+    }
+
+    // Call the receive callback.
+    instance->callbacks->received(temp_buffer, size, instance, instance->callbacks->user_data);
 }
 
 
@@ -120,7 +173,7 @@ void icmsg_callback(void* data) {
         ShMem::invalidateRange((void*)rx->tx_write, offsetof(struct tx_write_memory, buffer));
         if (rx->tx_write->sync_value2 != rx->sync_value) {
             // Reset RX fifo.
-            reset_rx(rx);
+            reset_rx(instance);
             // If instance was already fully initialized, inform about remote reset.
             if (instance->connected && instance->callbacks->remote_reset) {
                 instance->callbacks->remote_reset(instance, instance->callbacks->user_data);
@@ -147,7 +200,7 @@ void icmsg_callback(void* data) {
         uint32_t remote_write_index = rx->tx_write->write_index % rx->size_words;
         if (remote_write_index != rx->read_index) {
             while (remote_write_index != rx->read_index) {
-                receive_packet(instance, remote_write_index);
+                receive_one_packet(instance, remote_write_index);
             }
             // Update read index, so the remote will know that packets were received.
             rx->rx_write->read_index = rx->read_index;
@@ -176,6 +229,7 @@ int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_siz
     instance->tx.tx_event = tx_event;
     instance->connected = false;
     instance->callbacks = callbacks;
+    instance->tx.max_data_size = 0;
 
     // Assign pointers to TX buffer parameter
     instance->rx.rx_write = (struct rx_write_memory*)tx_ptr;
@@ -190,7 +244,7 @@ int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_siz
     instance->rx.size_words = (tx_real_size - sizeof(struct rx_write_memory)) / sizeof(uint32_t);
 
     // Reset RX part
-    reset_rx(&instance->rx);
+    reset_rx(instance);
 
     // Reset TX part
     reset_tx(&instance->tx);
@@ -204,14 +258,15 @@ int icmsg_init(struct icmsg_instance *instance, void* tx_buffer, uint32_t tx_siz
     return 0;
 };
 
-#define MAX_DATA_SIZE 0x00FFFFFF
-
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t size)
 {
     struct rx_fifo *rx = &instance->rx;
     struct tx_fifo *tx = &instance->tx;
+
+    // Check if size is acceptable.
+    if (size > MAX_TX_DATA_SIZE || size > tx->max_data_size) {
+        return -1; //return -ENOMEM;
+    }
 
     // Get read index and available fifo words based on it.
     ShMem::invalidateRange((void*)&tx->rx_write->read_index, sizeof(tx->rx_write->read_index));
@@ -227,7 +282,7 @@ int icmsg_send(struct icmsg_instance *instance, const void* buffer, uint32_t siz
     // Check if size packet will fit into the available space.
     uint32_t packet_words = (size + (3 + 4)) / 4;
 
-    if (packet_words > available_words || size > MAX_DATA_SIZE) {
+    if (packet_words > available_words) {
         return -1; //return -ENOMEM; // TODO: wait if timeout is required
     }
 
