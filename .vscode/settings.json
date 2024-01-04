@@ -1,4 +1,8 @@
 {
+    "editor.tabSize": 8,
+    "editor.insertSpaces": false,
+    "editor.indentSize": "tabSize",
+    "editor.detectIndentation": false,
     "files.associations": {
         "random": "cpp",
         "array": "cpp",
