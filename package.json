@@ -1,0 +1,19 @@
+{
+  "name": "sdk-conf",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tsc": "^2.0.4",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "con-reg-exp": "^0.2.4"
+  }
+}
