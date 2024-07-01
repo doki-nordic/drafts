@@ -98,6 +98,38 @@ SET_CONFIG(CONFIG_HEAP_SIZE = 16 * 1024);
 SET_CONFIG(CONFIG_BLE_MAX_CONNECTIONS = 10);
 ```
 
+### Configuration templates
+
+Normally, configuration options are uppercase. If you use specific lowercase letters
+the configuration options become templates. For example
+
+```c
+#ifndef COMMON_CONFIG_UARTn_ENABLED
+#define COMMON_CONFIG_UARTn_ENABLED 0
+#endif
+
+#if COMMON_CONFIG_UARTn_ENABLED
+
+#ifndef COMMON_CONFIG_UARTn_BAUDRATE
+#define COMMON_CONFIG_UARTn_BAUDRATE 115200
+#endif
+
+#ifndef COMMON_CONFIG_UARTn_CORE
+#define COMMON_CONFIG_UARTn_CORE CORE_APP
+#endif
+
+#endif
+```
+
+To make actual configuration options from the template, use the following macro:
+
+```c
+TEMPLATE_CONFIG(CONFIG_UART0, CONFIG_UARTn);
+TEMPLATE_CONFIG(CONFIG_UART1, CONFIG_UARTn);
+TEMPLATE_CONFIG(CONFIG_UART2, CONFIG_UARTn);
+ENSURE_CONFIG(CONFIG_UART2_LIMITED_FUNCTIONALITY == 1, "The UART2 on nRF... chip does not support ....");
+```
+
 ### Enumerating configuration options
 
 ```c
