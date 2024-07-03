@@ -123,7 +123,7 @@ IMAGE_ADD(RAD)
 // #include "images/ipc_radio.h" OR even directly:
 IMAGE_SOURCE("../../../modules/**/*.c");
 IMAGE_SOURCE("../../../images/ipc_radio/*.c"); // Some of those files also sets CONFIG_CORE_RAD=TRUE, so it is double-checked
-IMAGE_DEFINE("CONFIG_CORE_RAD", "TRUE");
+ENSURE_CONFIG(RAD_CONFIG_CORE_RAD == TRUE);
 
 #endif
 
@@ -213,3 +213,11 @@ Selecting front-ends and configuring them should be also done with use configura
 #ifndef CONFIG_PROJECT_FRONTEND
 #define CONFIG_PROJECT_FRONTEND COMMON_CONFIG_PROJECT_FRONTEND
 #endif
+
+/*
+
+The generated Makefile should find sdk (both binaries and source files) in following order:
+- NRF_SDK_ROOT environment variable,
+- using command `nrf-sdk-config --version-sdk-path`
+- absolute path of sdk when the Makefile was created or updated,
+*/
