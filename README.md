@@ -98,6 +98,8 @@ SET_CONFIG(CONFIG_HEAP_SIZE = 16 * 1024);
 SET_CONFIG(CONFIG_BLE_MAX_CONNECTIONS = 10);
 ```
 
+TODO: PREFER_CONFIG(...)
+
 ### Configuration templates
 
 Normally, configuration options are uppercase. If you use specific lowercase letters
@@ -120,6 +122,8 @@ the configuration options become templates. For example
 
 #endif
 ```
+
+TODO: Nested templates.
 
 To make actual configuration options from the template, use the following macro:
 
@@ -152,7 +156,7 @@ ENUMERATE_CONFIG("regexp pattern", macro, unique_enumeration_name);
 Filtering the list:
 
 ```c
-ENUMERATE_CONFIG_F("regexp pattern", condition, macro, unique_enumeration_name);
+ENUMERATE_CONFIG("regexp pattern", macro, unique_enumeration_name, condition);
 ```
 
 The list item will be removed if the condition returns false.
@@ -192,3 +196,8 @@ _CONFIG_TOOL_PROJECT_SET("linker_script", "../../project_files/linker_script.ld"
 INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configuration file, but not include into build directly.
 #endif
 ```
+### TODO
+* Some resource manager (global and local) to allocate resources and assign them to `CONFIG_` options.
+ * e.g. DPPI channels, shared memory, bells,
+ * allow both configuration-time allocation and fixed reservation
+
