@@ -160,3 +160,35 @@ The condition is evaluated in the `config.h` file, so you cannot use
 values or macros not available in it. Only command line definitions,
 configuration and macros from `macros.h` file.
 
+### Image management
+
+Config tool understans special macros that adds an image.
+Image configured with command line is considered main image.
+It is named `APP` by default, but can be changes with `--image` option.
+
+```c
+IMAGE_ADD(RAD);                  // Add image named "RAD"
+IMAGE_SOURCE("../radio/**/*.c"); // Add sources to the previously added image
+IMAGE_DEFINE("MY_DEF=1");        // Set definition to the the previously added image
+#include "image_def/radio.h"     // Pass common radio sources, definitions and configs from SDK.
+ENSURE_CONFIG(RAD_CONFIG_DEBUG == TRUE); // Assert configuration of image as usual with `RAD_` prefix.
+```
+
+If some image was enabled (or disabled), entire configuration tool is rerun forgetting about any previous errors.
+If some image was disabled (or enabled) during rerun caused by the same image, the tool reports fatal error.
+List of images should be cached to avoid rerunning the tool each time.
+Because of that config tool must be error-tolerant, but if `IMAGE_ADD` macro dependencies contains error, then
+it is fatal error.
+
+### Project generation
+
+Generation of project files will be controlled by the `_CONFIG_TOOL_PROJECT_*` macros.
+Those are internal macros. User should change `CONFIG_` configuration to control it.
+
+```c
+#if CONFIG_PROJECT_MAKEFILE
+_CONFIG_TOOL_PROJECT("Makefile");
+_CONFIG_TOOL_PROJECT_SET("linker_script", "../../project_files/linker_script.ld");
+INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configuration file, but not include into build directly.
+#endif
+```
