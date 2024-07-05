@@ -198,6 +198,12 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
 ```
 ### TODO
 * Some resource manager (global and local) to allocate resources and assign them to `CONFIG_` options.
- * e.g. DPPI channels, shared memory, bells,
- * allow both configuration-time allocation and fixed reservation
+  * e.g. DPPI channels, shared memory, bells,
+  * allow both configuration-time allocation and fixed reservation
+  * allow specifing conditions when allocating, e.g. which pins should be available when allocating UART instance (assuming not all instance has access to all pins).
+  * for memory type resources, allow reclaiming unused memory, e.g. like reclaiming unused space in CSS flex box container.
+* Extension API
+  * Core part contains parser, configuration and images functionality
+  * Standard extensions: ENUMERATE_CONFIG, Project generation, Resource manager
+  * Example of additional extension: package for bootloader generator, merge hex
 
