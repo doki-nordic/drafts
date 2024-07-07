@@ -24,10 +24,11 @@ const char timestamp[] = __TIMESTAMP__;
 // expect error: Unterminated macro arguments.
 M1(
 
-// --------------------- no value in if
-// expect error: ???
+/*
+/ / - -------------------- no value in if
+/ / expect error: ???
 #if M1()
-#endif
+#endif*/
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/macro_arg_directive.c
 

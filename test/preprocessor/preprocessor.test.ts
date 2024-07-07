@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import cre from 'con-reg-exp';
 import { describe, expect, test } from 'vitest';
-import { Listener, Parser, Macro } from '../../js/parser';
+import { Listener, Parser, Macro, MacroArgument } from '../../js/parser';
 import { Token, TokenWithDirective } from '../../js/tokenizer';
 
 const ws = cre`repeat [\t ]`;
@@ -137,7 +137,7 @@ function runParser(input: string, warnings: string[], fileName: string): string 
             parser.objectReplacement(macro);
         },
     
-        functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: Token[][]): void {
+        functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: MacroArgument[]): void {
             parser.functionReplacement(macro, args);
         },
     

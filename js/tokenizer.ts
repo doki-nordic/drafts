@@ -132,11 +132,12 @@ export interface Directive {
 export class TokenBase {
     public constructor(
         public type: TokenType,
-        public position: number,
-        public source: string,
+        public line: number,
+        public source: string, // Maybe rename all "source" to "file"
         public whitespace: string,
         public value: string,
         public data?: any,
+        public direct?: boolean,
     ) { }
 }
 
@@ -162,58 +163,55 @@ export interface TokenWithData extends TokenBase {
 export type Token = TokenWithValue | TokenWithOperator | TokenWithDirective | TokenWithData;
 
 
-function* tokenize(input: string, source: string, additionalTokens?: Token[], regexp?: RegExp, positionOffset: number = 0) {
+function* tokenize(input: string, source: string, regexp?: RegExp, lineOffset: number = 0) {
     let groups: GlobalTokenRegExpGroups | undefined;
     regexp = new RegExp(regexp || globalTokenRegExp);
-    let position = 0;
+    let offset = 0;
+    let line = 0;
 
     while ((groups = regexp.exec(input)?.groups as (GlobalTokenRegExpGroups | undefined))) {
 
         let whitespace = (groups.whitespace !== undefined ? groups.whitespace : groups.directiveWhitespace) as string;
 
-        position += whitespace.length;
+        offset += whitespace.length;
+        line += whitespace.match(/\n/g)?.length || 0;
 
         if (groups.directiveName !== undefined) {
-            let innerOffset = position + groups.directivePrefix.length + groups.directiveName.length;
             let directive: Directive = {
                 name: groups.directiveName,
-                tokens: [...tokenize(groups.directiveBody, source, undefined, innerTokenRegExp, innerOffset)],
+                tokens: [...tokenize(groups.directiveBody, source, innerTokenRegExp, line + lineOffset)],
             };
             yield new TokenBase(
                 TokenType.directive,
-                position + positionOffset,
+                line + lineOffset,
                 source,
                 whitespace,
                 groups.directivePrefix + groups.directiveName + groups.directiveBody,
                 directive) as Token;
         } else if (groups.float !== undefined) {
-            yield new TokenBase(TokenType.floating, position + positionOffset, source, whitespace, groups.float) as Token;
+            yield new TokenBase(TokenType.floating, line + lineOffset, source, whitespace, groups.float) as Token;
         } else if (groups.integer !== undefined) {
-            yield new TokenBase(TokenType.integer, position + positionOffset, source, whitespace, groups.integer) as Token;
+            yield new TokenBase(TokenType.integer, line + lineOffset, source, whitespace, groups.integer) as Token;
         } else if (groups.comment !== undefined) {
-            yield new TokenBase(TokenType.comment, position + positionOffset, source, whitespace, groups.comment) as Token;
+            yield new TokenBase(TokenType.comment, line + lineOffset, source, whitespace, groups.comment) as Token;
         } else if (groups.operator !== undefined) {
-            yield new TokenBase(TokenType.operator, position + positionOffset, source, whitespace, groups.operator) as Token;
+            yield new TokenBase(TokenType.operator, line + lineOffset, source, whitespace, groups.operator) as Token;
         } else if (groups.string !== undefined) {
-            yield new TokenBase(TokenType.string, position + positionOffset, source, whitespace, groups.string) as Token;
+            yield new TokenBase(TokenType.string, line + lineOffset, source, whitespace, groups.string) as Token;
         } else if (groups.char !== undefined) {
-            yield new TokenBase(TokenType.character, position + positionOffset, source, whitespace, groups.char) as Token;
+            yield new TokenBase(TokenType.character, line + lineOffset, source, whitespace, groups.char) as Token;
         } else if (groups.identifier !== undefined) {
-            yield new TokenBase(TokenType.identifier, position + positionOffset, source, whitespace, groups.identifier) as Token;
+            yield new TokenBase(TokenType.identifier, line + lineOffset, source, whitespace, groups.identifier) as Token;
         } else if (groups.unknown !== undefined) {
-            yield new TokenBase(TokenType.unknown, position + positionOffset, source, whitespace, groups.unknown) as Token;
+            yield new TokenBase(TokenType.unknown, line + lineOffset, source, whitespace, groups.unknown) as Token;
         } else if (groups.endOfText !== undefined) {
-            if (additionalTokens !== undefined) {
-                for (let t of additionalTokens) {
-                    yield t;
-                }
-            }
             return;
         } else {
             break;
         }
 
-        position = regexp.lastIndex;
+        line += input.substring(offset, regexp.lastIndex).match(/\n/g)?.length || 0;
+        offset = regexp.lastIndex;
     }
 
     throw new Error('This should never happen.');
@@ -223,9 +221,14 @@ function* tokenizeEmpty() {
     return;
 }
 
+interface StackEntry {
+    generator: Generator<Token>;
+    peekedTokens: Token[];
+}
+
 export class Tokenizer {
 
-    private stack: Generator<Token>[];
+    private stack: StackEntry[] = [];
     private endToken: Token;
     private peekedTokens: Token[];
 
@@ -233,39 +236,33 @@ export class Tokenizer {
     public constructor(input: string, source: string);
     public constructor(input?: string, source?: string) {
         if (input !== undefined && source != undefined) {
-            this.stack = [tokenize(input, source)];
+            this.stack = [{ generator: tokenize(input, source), peekedTokens: [] }];
             this.endToken = new TokenBase(TokenType.end, input.length, source, '', '') as Token;
         } else {
-            this.stack = [tokenizeEmpty()];
+            this.stack = [{ generator: tokenizeEmpty(), peekedTokens: [] }];
             this.endToken = new TokenBase(TokenType.end, 0, '[internal]', '', '') as Token;
         }
         this.peekedTokens = [];
     }
 
     public read(): Token {
-        if (this.peekedTokens.length > 0) {
-            let res = this.peekedTokens.shift() as Token;
-            return res;
-        }
-        let top = this.stack.at(-1) as Generator<Token>;
-        let token: Token;
         while (true) {
-            token = top.next().value;
-            if (token === undefined && this.stack.length > 1) {
-                this.stack.pop();
-                top = this.stack.at(-1) as Generator<Token>;
-            } else {
-                break;
+            if (this.peekedTokens.length > 0) {
+                let res = this.peekedTokens.shift() as Token;
+                res.direct = false;
+                return res;
             }
+            let top = this.stack.at(-1) as StackEntry;
+            let token = top.generator.next().value;
+            if (token !== undefined) {
+                token.direct = true;
+                return token;
+            } else if (this.stack.length === 1) {
+                return this.endToken;
+            }
+            this.stack.pop();
+            this.peekedTokens = top.peekedTokens;
         }
-        return token !== undefined ? token : this.endToken;
-    }
-
-    public peek(): Token {
-        if (this.peekedTokens.length === 0) {
-            this.peekedTokens.push(this.read());
-        }
-        return this.peekedTokens[0];
     }
 
     public push(tokens: Token | Token[]): void {
@@ -277,7 +274,10 @@ export class Tokenizer {
     }
 
     public include(input: string, source: string) {
-        this.stack.push(tokenize(input, source, this.peekedTokens));
+        this.stack.push({
+            generator: tokenize(input, source),
+            peekedTokens: this.peekedTokens,
+        });
         this.peekedTokens = [];
     }
 }

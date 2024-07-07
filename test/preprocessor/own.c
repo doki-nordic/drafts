@@ -60,6 +60,31 @@ BAR(a)
 BAR(b)
 BAR(c)
 
+// --------------------- line number
+// expect: 5 6 7
+__LINE__
+__LINE__
+__LINE__
+
+// --------------------- line number in args
+// expect: xxx 5 yyy xxx 6 yyy xxx 7 yyy
+FOO(__LINE__)
+FOO(__LINE__)
+FOO(__LINE__)
+
+// --------------------- line number in macro
+// expect: a 6 b 7 c 8
+#define BAR(x) x __LINE__
+BAR(a)
+BAR(b)
+BAR(c)
+
+// --------------------- line number in include
+// expect: 1 1 1
+#include "helper/line.h"
+#include "helper/line.h"
+#include "helper/line.h"
+
 // --------------------- unterminated macro arguments
 // expect error: Unterminated macro arguments.
 FOO(1, 2, 3
@@ -80,6 +105,45 @@ X(1)
 #define f(a) a*g
 #define g(a) f(a)
 f(2)(9)
+
+// ======================
+#define STR1(x) #x
+#define STR2(x) STR1(x)
+#define STRV1(...) #__VA_ARGS__
+#define STRV2(...) STRV1(__VA_ARGS__)
+#define A a
+#define X x
+#define Y y
+#define Z z
+
+// ---------------------- stringify argument name
+// expect: "A"
+STR1(A)
+// expect: "X, Y, Z"
+STRV1(X, Y, Z)
+// expect: ""
+STRV1()
+
+// ---------------------- stringify argument value
+// expect: "a"
+STR2(A)
+// expect: "x, y, z"
+STRV2(X, Y, Z)
+// expect: ""
+STRV2()
+
+// ---------------------- stringify multiline
+// expect: "a"
+STR2(
+    A)
+// expect: "x, y, z"
+STRV2(
+    X,
+    Y,
+    Z)
+// expect: ""
+STRV2(
+)
 
 // ====================== map enumerator
 // expect: {Lorem} {ipsum} {dolor} {sit} {amet} {consectetur} {adipiscing} {elit} {Curabitur} {ac} {lobortis} {tortor}

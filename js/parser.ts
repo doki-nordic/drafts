@@ -19,7 +19,7 @@ export interface Listener {
     endifDirective(parser: Parser, token: TokenWithDirective): void;
     unknownDirective(parser: Parser, token: TokenWithDirective): void;
     objectMacro(parser: Parser, macro: Macro, token: Token): void;
-    functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: Token[][]): void;
+    functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: MacroArgument[]): void;
     error(parser: Parser, tokens: Token[], message: string): void;
     warning(parser: Parser, tokens: Token[], message: string): void;
     code(parser: Parser, token: Token): void;
@@ -31,28 +31,33 @@ export class Macro {
         public parameters: string[] | undefined,
         public ellipsis: boolean,
         public tokens: Token[],
-        public callback?: (parser: Parser, macro: Macro, allTokens: Token[], args: Token[][]) => Token[],
+        public callback?: (parser: Parser, macro: Macro, allTokens: Token[], args: MacroArgument[]) => Token[],
     ) { }
 }
 
 const specialMacros: { [name: string]: Macro } = {
-    '__COUNTER__': new Macro('__COUNTER__', undefined, false, [], (parser, macro, allTokens) => parser.getCounterTokens(allTokens[0])),
-    '__FILE__': new Macro('__FILE__', undefined, false, [], (parser, macro, allTokens) => parser.getFileTokens(allTokens[0])),
-    '__DATE__': new Macro('__DATE__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"Jan  1 1970"') as Token]),
-    '__TIME__': new Macro('__TIME__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"00:00:00"') as Token]),
-    '__TIMESTAMP__': new Macro('__TIMESTAMP__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"Thu Jan  1 00:00:00 1970"') as Token]),
+    '__COUNTER__': new Macro('__COUNTER__', undefined, false, [], parser => parser.getCounterTokens()),
+    '__FILE__': new Macro('__FILE__', undefined, false, [], parser => parser.getFileTokens()),
+    '__LINE__': new Macro('__LINE__', undefined, false, [], parser => parser.getLineTokens()),
+    '__DATE__': new Macro('__DATE__', undefined, false, [], parser => parser.getStringTokens('Jan  1 1970')),
+    '__TIME__': new Macro('__TIME__', undefined, false, [], parser => parser.getStringTokens('00:00:00')),
+    '__TIMESTAMP__': new Macro('__TIMESTAMP__', undefined, false, [], parser => parser.getStringTokens('Thu Jan  1 00:00:00 1970')),
 }
 
 
 export type MacroDict = { [key: string]: Macro };
 
+export interface MacroArgument {
+    tokens: Token[];
+    endingComma?: Token;
+}
 
 interface InvokingMacroState {
     macro: Macro;
     bracketStack: string[];
     allTokens: Token[];
     argumentStart: number;
-    arguments: Token[][];
+    arguments: MacroArgument[];
 }
 
 
@@ -60,7 +65,10 @@ class ParserState {
     public macros = createEmptyObject<MacroDict>();
     public nestedMacros = new Set<Macro>();
     public counter = 0;
-    public file = '';
+    public line = 0;
+    public constructor(
+        public file: string
+    ) { }
 }
 
 
@@ -99,8 +107,7 @@ export class Parser {
         this.invokingMacro = undefined;
         this.tokenizer = new Tokenizer(input, source);
         this.sink = (parser, token) => this.listener.code(parser, token);
-        this.state = new ParserState();
-        this.state.file = source;
+        this.state = new ParserState(source);
         this.parseLoop();
     }
 
@@ -117,13 +124,15 @@ export class Parser {
         let token: Token;
         do {
             token = this.tokenizer.read();
+            if (token.direct) {
+                this.state.file = token.source;
+                this.state.line = token.line;
+            }
             if (token.type === TokenType.end) {
                 break;
             } else if (token.type === TokenType.placeholder) {
                 if (token.data instanceof Macro) {
                     this.state.nestedMacros.delete(token.data);
-                } else if (typeof token.data === 'string') {
-                    this.state.file = token.data;
                 }
             } else if (token.type === TokenType.directive) {
                 let directive = token.data;
@@ -240,7 +249,7 @@ export class Parser {
                     this.invokingMacro = undefined;
                     let tokens = invokingMacro.allTokens.slice(invokingMacro.argumentStart, invokingMacro.allTokens.length - 1);
                     if (invokingMacro.arguments.length > 0 || tokens.length > 0) {
-                        invokingMacro.arguments.push(tokens);
+                        invokingMacro.arguments.push({ tokens });
                     }
                     // Listener will decide what to do next with the function-like macro invocation
                     this.listener.functionMacro(this, invokingMacro.macro, invokingMacro.allTokens, invokingMacro.arguments);
@@ -265,7 +274,10 @@ export class Parser {
             }
             case ',':
                 if (invokingMacro.bracketStack.length === 1) {
-                    invokingMacro.arguments.push(invokingMacro.allTokens.slice(invokingMacro.argumentStart, invokingMacro.allTokens.length - 1));
+                    invokingMacro.arguments.push({
+                        tokens: invokingMacro.allTokens.slice(invokingMacro.argumentStart, invokingMacro.allTokens.length - 1),
+                        endingComma: token,
+                    });
                     invokingMacro.argumentStart = invokingMacro.allTokens.length;
                 }
                 break;
@@ -287,19 +299,31 @@ export class Parser {
         }
     }
 
+    private stringifyTokens(tokens: Token[]): string {
+        let parts: string[] = [];
+        for (let token of tokens) {
+            if (token.whitespace.length > 0) {
+                parts.push(' ');
+            }
+            parts.push(token.value);
+        }
+        return parts.join('').trim();
+    }
+
     /**
      * Execute function-like macro replacement and put result in current position.
      * @param macro Macro to replace.
      * @param args  Macro arguments.
      */
-    public functionReplacement(macro: Macro, args: Token[][]): void {
+    public functionReplacement(macro: Macro, args: MacroArgument[]): void {
         assert(macro.parameters);
         let minArgs = macro.parameters.length;
         let maxArgs = macro.ellipsis ? Infinity : minArgs;
         if (minArgs === 1 && maxArgs === 1 && args.length === 0) {
             // special case: zero arguments can be used in macro with one parameter.
-            args = [[]];
+            args = [{ tokens: [] }];
         }
+        // Check number of arguments
         if (args.length < minArgs) {
             this.listener.error(this, macro.tokens, 'Macro requires more arguments.') // TODO: Add location of arguments
             return;
@@ -307,37 +331,55 @@ export class Parser {
             this.listener.error(this, macro.tokens, 'Macro requires less arguments.') // TODO: Add location of arguments
             return;
         }
-        let argsReplaced: { [name: string]: Token[] | number } = {};
-        for (let i = 0; i < macro.parameters.length; i++) {
-            let param = macro.parameters[i];
-            argsReplaced[param] = i;
+        // Divide into named and variable arguments
+        let nonVaArgs: Token[][] = args.slice(0, minArgs).map(x => x.tokens);
+        let vaArgs: Token[] | undefined = undefined;
+        if (macro.ellipsis) {
+            vaArgs = [];
+            for (let arg of args.slice(minArgs)) {
+                vaArgs.push(...arg.tokens);
+                if (arg.endingComma) {
+                    vaArgs.push(arg.endingComma);
+                }
+            }
         }
-        let vaArgsReplaced: Token[] | undefined = undefined;
+        // Objects that allows getting arguments by name
+        let argsReplaced: { [name: string]: Token[] | undefined } = Object.create(null);
+        let argsByName: { [name: string]: Token[] } = Object.create(null);
+        for (let i = 0; i < macro.parameters.length; i++) {
+            let parameterName = macro.parameters[i];
+            argsByName[parameterName] = nonVaArgs[i];
+            argsReplaced[parameterName] = undefined;
+        }
+        // Also add variable arguments
+        if (vaArgs) {
+            argsByName['__VA_ARGS__'] = vaArgs;
+            argsReplaced['__VA_ARGS__'] = undefined;
+        }
+        // Prepare child parser for arguments replacement
         let childParser = this.getChildParser();
+        // Loop over all input tokens
         let argReplacedTokens = [];
-        for (let token of macro.tokens) {
-            if (token.type === TokenType.identifier && token.value in argsReplaced) {
+        for (let tokenIndex = 0; tokenIndex < macro.tokens.length; tokenIndex++) {
+            let token = macro.tokens[tokenIndex];
+            if (token.type === TokenType.operator && token.value === '#') {
+                let nextToken = macro.tokens[tokenIndex + 1];
+                if (nextToken.type !== TokenType.identifier || !(nextToken.value in argsByName)) {
+                    this.listener.error(this, [nextToken], 'The "#" is not followed by a macro parameter.');
+                    continue;
+                }
+                tokenIndex++;
+                let str = this.stringifyTokens(argsByName[nextToken.value]);
+                argReplacedTokens.push(...this.getStringTokens(str));
+            } else if (token.type === TokenType.identifier && token.value in argsByName) {
                 let argTokens = argsReplaced[token.value];
-                if (typeof argTokens === 'number') {
+                if (argTokens === undefined) {
                     let output: Token[] = [];
-                    childParser.parseInternal(args[argTokens], output, this.state);
+                    childParser.parseInternal(argsByName[token.value], output, this.state);
                     argsReplaced[token.value] = output;
                     argTokens = output;
                 }
                 argReplacedTokens.push(...argTokens);
-            } else if (token.type === TokenType.identifier && token.value === '__VA_ARGS__' && macro.ellipsis) {
-                if (vaArgsReplaced === undefined) {
-                    vaArgsReplaced = [];
-                    for (let i = minArgs; i < args.length; i++) {
-                        let output: Token[] = [];
-                        childParser.parseInternal(args[i], output, this.state);
-                        vaArgsReplaced.push(...output);
-                        if (i < args.length - 1) {
-                            vaArgsReplaced.push(new TokenBase(TokenType.operator, 0, '', '', ',') as Token); // TODO: source and position
-                        }
-                    }
-                }
-                argReplacedTokens.push(...vaArgsReplaced);
             } else {
                 argReplacedTokens.push(token);
             }
@@ -353,8 +395,6 @@ export class Parser {
      * @param source The name of the source file.
      */
     public include(input: string, source: string): void {
-        this.tokenizer.push(new TokenBase(TokenType.placeholder, 0, '', '', '', this.state.file) as Token);
-        this.state.file = source;
         this.tokenizer.include(input, source);
     }
 
@@ -435,14 +475,25 @@ export class Parser {
         delete this.state.macros[macroName];
     }
 
-    public getCounterTokens(from: Token | undefined): Token[] {
-        let result = new TokenBase(TokenType.integer, from?.position || 0, from?.source || '', '', this.state.counter.toString());
-        this.state.counter++;
+    public getCounterTokens(): Token[] {
+        return this.getIntegerTokens(this.state.counter++);
+    }
+
+    public getFileTokens(): Token[] {
+        return this.getStringTokens(this.state.file);
+    }
+
+    public getLineTokens(): Token[] {
+        return this.getIntegerTokens(this.state.line + 1);
+    }
+
+    public getStringTokens(value: string): Token[] {
+        let result = new TokenBase(TokenType.string, this.state.line, this.state.file, '', this.escapeString(value));
         return [result as Token];
     }
 
-    getFileTokens(from: Token | undefined): Token[] {
-        let result = new TokenBase(TokenType.string, from?.position || 0, from?.source || '', '', this.escapeString(this.state.file));
+    public getIntegerTokens(value: number): Token[] {
+        let result = new TokenBase(TokenType.string, this.state.line, this.state.file, '', value.toString());
         return [result as Token];
     }
 
