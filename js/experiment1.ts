@@ -208,9 +208,9 @@ interface Macro {
 
 let macros: { [key: string]: Macro } = {};
 
-function define(name: string, body: string);
-function define(name: string, parameters: string[], body: string);
-function define(name: string, parametersOrBody: string[] | string, body?: string) {
+function define(name: string, body: string): void;
+function define(name: string, parameters: string[], body: string): void;
+function define(name: string, parametersOrBody: string[] | string, body?: string): void {
 
     let parameters: string[] | undefined;
     if (body === undefined) {
