@@ -23,7 +23,7 @@ __FILE__
 FOO(__FILE__)
 
 // --------------------- unexpected "}"
-// expect error: ???
+// expect error: Expecting "(" but found "{".
 int bar() {
     FOO(
     return 0;
@@ -55,7 +55,7 @@ FOO(__COUNTER__)
 
 // --------------------- counter in macro
 // expect: a 0 b 1 c 2
-#define BAR(x) __COUNTER__ x
+#define BAR(x) x __COUNTER__
 BAR(a)
 BAR(b)
 BAR(c)
@@ -65,7 +65,7 @@ BAR(c)
 FOO(1, 2, 3
 
 // ====================== unterminated macro parameters
-// expect error: ???
+// expect error: Invalid macro parameters.
 #define X(a, b, c, ...
 
 // ====================== line break before macro parameters
@@ -75,7 +75,7 @@ FOO(1, 2, 3
 (a) - a -
 X(1)
 
-// ====================== line break before macro parameters
+// ====================== nesting scope
 // expect: 2*9*g
 #define f(a) a*g
 #define g(a) f(a)

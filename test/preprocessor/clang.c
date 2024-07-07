@@ -21,7 +21,7 @@ const char timestamp[] = __TIMESTAMP__;
 #define M1()
 
 // --------------------- unterminated macro args
-// expect error: ???
+// expect error: Unterminated macro arguments.
 M1(
 
 // --------------------- no value in if
@@ -32,7 +32,7 @@ M1(
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/macro_arg_directive.c
 
 // ===================== define in args
-// expect: enum { n = 5 }
+// expect: enum { n = 5 };
 #define a(x) enum { x }
 a(n =
 #undef a

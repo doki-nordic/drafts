@@ -25,7 +25,7 @@ interface GlobalTokenRegExpGroups extends InnerTokenRegExpGroups {
 
 const innerTokenRegExp = cre.sticky.ignoreCase.legacy`
     // Skip white spaces (including backslash new line)
-    whitespace: repeat ([\t ] or ('\\', optional \r, \n))
+    whitespace: repeat (whitespace or ('\\', optional \r, \n))
     {
         // Floating point number
         float: {
@@ -106,17 +106,17 @@ const globalTokenRegExp = cre.sticky.ignoreCase.legacy.global`
 
 
 export enum TokenType {
-    directive,
-    floating,
-    integer,
-    comment,
-    operator,
-    string,
-    character,
-    identifier,
-    unknown,
-    end,
-    placeholder,
+    directive = 0,
+    floating = 1,
+    integer = 2,
+    comment = 3,
+    operator = 4,
+    string = 5,
+    character = 6,
+    identifier = 7,
+    unknown = 8,
+    end = 9,
+    placeholder = 10,
 }
 
 export type Operator = '>>=' | '<<=' | '...' | '##' | '*=' | '/=' | '%=' | '+=' | '-=' | '&=' | '^='

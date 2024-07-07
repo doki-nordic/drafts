@@ -11,7 +11,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/js/parser.ts",
+            "program": "${workspaceFolder}/js/parser_debug.ts",
             "outFiles": [
                 "${workspaceFolder}/dist/**/*.js"
             ],

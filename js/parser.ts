@@ -30,9 +30,19 @@ export class Macro {
         public name: string,
         public parameters: string[] | undefined,
         public ellipsis: boolean,
-        public tokens: Token[]
+        public tokens: Token[],
+        public callback?: (parser: Parser, macro: Macro, allTokens: Token[], args: Token[][]) => Token[],
     ) { }
 }
+
+const specialMacros: { [name: string]: Macro } = {
+    '__COUNTER__': new Macro('__COUNTER__', undefined, false, [], (parser, macro, allTokens) => parser.getCounterTokens(allTokens[0])),
+    '__FILE__': new Macro('__FILE__', undefined, false, [], (parser, macro, allTokens) => parser.getFileTokens(allTokens[0])),
+    '__DATE__': new Macro('__DATE__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"Jan  1 1970"') as Token]),
+    '__TIME__': new Macro('__TIME__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"00:00:00"') as Token]),
+    '__TIMESTAMP__': new Macro('__TIMESTAMP__', undefined, false, [], () => [new TokenBase(TokenType.string, 0, '', '', '"Thu Jan  1 00:00:00 1970"') as Token]),
+}
+
 
 export type MacroDict = { [key: string]: Macro };
 
@@ -49,11 +59,12 @@ interface InvokingMacroState {
 class ParserState {
     public macros = createEmptyObject<MacroDict>();
     public nestedMacros = new Set<Macro>();
+    public counter = 0;
+    public file = '';
 }
 
 
 export class Parser {
-
     private invokingMacro: InvokingMacroState | undefined = undefined;
     private tokenizer!: Tokenizer;
     private sink!: (parser: Parser, token: Token) => void;
@@ -89,6 +100,7 @@ export class Parser {
         this.tokenizer = new Tokenizer(input, source);
         this.sink = (parser, token) => this.listener.code(parser, token);
         this.state = new ParserState();
+        this.state.file = source;
         this.parseLoop();
     }
 
@@ -110,6 +122,8 @@ export class Parser {
             } else if (token.type === TokenType.placeholder) {
                 if (token.data instanceof Macro) {
                     this.state.nestedMacros.delete(token.data);
+                } else if (typeof token.data === 'string') {
+                    this.state.file = token.data;
                 }
             } else if (token.type === TokenType.directive) {
                 let directive = token.data;
@@ -145,7 +159,7 @@ export class Parser {
                 // Token in macro invocation arguments
                 this.putArgumentToken(token);
             } else if (token.type === TokenType.identifier) {
-                let macro = this.state.macros[token.value];
+                let macro = this.state.macros[token.value] || specialMacros[token.value];
                 if (macro && !this.state.nestedMacros.has(macro)) {
                     // Macro replacement
                     this.putMacroToken(token, macro);
@@ -264,9 +278,13 @@ export class Parser {
      */
     public objectReplacement(macro: Macro): void {
         assert(!macro.parameters);
-        this.state.nestedMacros.add(macro);
-        this.tokenizer.push(new TokenBase(TokenType.placeholder, 0, '', '', '', macro) as Token);
-        this.tokenizer.push(macro.tokens);
+        if (macro.callback) {
+            this.tokenizer.push(macro.callback(this, macro, [], [])); // TODO: source tokens
+        } else {
+            this.state.nestedMacros.add(macro);
+            this.tokenizer.push(new TokenBase(TokenType.placeholder, 0, '', '', '', macro) as Token);
+            this.tokenizer.push(macro.tokens);
+        }
     }
 
     /**
@@ -335,6 +353,8 @@ export class Parser {
      * @param source The name of the source file.
      */
     public include(input: string, source: string): void {
+        this.tokenizer.push(new TokenBase(TokenType.placeholder, 0, '', '', '', this.state.file) as Token);
+        this.state.file = source;
         this.tokenizer.include(input, source);
     }
 
@@ -414,105 +434,38 @@ export class Parser {
     public removeMacro(macroName: string) {
         delete this.state.macros[macroName];
     }
-}
 
-
-let out = '';
-
-let listener: Listener = {
-
-    defineDirective(parser: Parser, token: TokenWithDirective): void {
-        parser.addMacro(parser.parseMacroDefinition(token.data.tokens));
-    },
-
-    undefDirective(parser: Parser, token: TokenWithDirective): void {
-        parser.removeMacro(parser.parseUndef(token.data.tokens));
-    },
-
-    includeDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    ifDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    elifDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    elseDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    endifDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    unknownDirective(parser: Parser, token: TokenWithDirective): void {
-        
-    },
-
-    objectMacro(parser: Parser, macro: Macro, token: Token): void {
-        parser.objectReplacement(macro);
-    },
-
-    functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: Token[][]): void {
-        parser.functionReplacement(macro, args);
-    },
-
-    warning(parser: Parser | Parser, tokens: Token[], message: string): void {
-        console.log('warning', tokens[0], message);
-    },
-
-    error(parser: Parser | Parser, tokens: Token[], message: string): void {
-        console.log('error', tokens[0], message);
-    },
-
-    code(parser: Parser, token: Token): void {
-        let whitespace = token.whitespace;
-        if (whitespace.length === 0) {
-            let lastChar = out.length > 0 ? out[out.length - 1] : '!';
-            if (lastChar.match(/[a-z0-9_$]/i)) whitespace = ' ';
-        }
-        out += whitespace;
-        out += token.value;
+    public getCounterTokens(from: Token | undefined): Token[] {
+        let result = new TokenBase(TokenType.integer, from?.position || 0, from?.source || '', '', this.state.counter.toString());
+        this.state.counter++;
+        return [result as Token];
     }
+
+    getFileTokens(from: Token | undefined): Token[] {
+        let result = new TokenBase(TokenType.string, from?.position || 0, from?.source || '', '', this.escapeString(this.state.file));
+        return [result as Token];
+    }
+
+    public escapeString(text: string): string {
+        return '"' + text + '"'; // TODO: do real escaping
+    }
+
+    public unescapeString(text: string): string {
+        return text.substring(1, text.length - 1); // TODO: do real un-escaping
+    }
+
+    public parseIncludePath(tokens: Token[]): { path: string; system: boolean; } {
+        tokens = tokens.filter(token => token.type !== TokenType.comment);
+        if (tokens.length === 1 && tokens[0].type === TokenType.string) {
+            let text = tokens[0].value;
+            if (text.toLowerCase().startsWith('l')) {
+                text = text.substring(1);
+            }
+            return { path: this.unescapeString(text), system: false };
+        } else {
+            throw new Error('Not implemented'); // TODO: parse system include in special way in tokenizer.
+        }
+    }
+
 }
 
-let p = new Parser(listener);
-p.parse(`
-
-    #define EVAL0(...) __VA_ARGS__
-    #define EVAL1(...) EVAL0(EVAL0(EVAL0(__VA_ARGS__)))
-    #define EVAL2(...) EVAL1(EVAL1(EVAL1(__VA_ARGS__)))
-    #define EVAL3(...) EVAL2(EVAL2(EVAL2(__VA_ARGS__)))
-    #define EVAL4(...) EVAL3(EVAL3(EVAL3(__VA_ARGS__)))
-    #define EVAL(...)  EVAL4(EVAL4(EVAL4(__VA_ARGS__)))
-    
-    #define MAP_END(...)
-    #define MAP_OUT
-    #define MAP_COMMA ,
-    
-    #define MAP_GET_END2() 0, MAP_END
-    #define MAP_GET_END1(...) MAP_GET_END2
-    #define MAP_GET_END(...) MAP_GET_END1
-    #define MAP_NEXT0(test, next, ...) next MAP_OUT
-    #define MAP_NEXT1(test, next) MAP_NEXT0(test, next, 0)
-    #define MAP_NEXT(test, next)  MAP_NEXT1(MAP_GET_END test, next)
-    
-    #define MAP0(f, x, peek, ...) f (x) MAP_NEXT(peek, MAP1)(f, peek, __VA_ARGS__)
-    #define MAP1(f, x, peek, ...) f (x) MAP_NEXT(peek, MAP0)(f, peek, __VA_ARGS__)
-    
-    #define MAP(f, ...) EVAL(MAP1(f, __VA_ARGS__, ()()(), ()()(), ()()(), 0))
-    
-    #define ENUMERATOR \
-      Lorem, ipsum, dolor, sit, amet, consectetur, adipiscing, elit, Curabitur, ac, lobortis, tortor
-    
-    #define STRING(x) {{x}}
-    
-    MAP(STRING, ENUMERATOR)
-    
-`, '');
-
-console.log(out);
