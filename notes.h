@@ -259,3 +259,25 @@ SET_CONFIG(CONFIG_UART_DRIVER_MY_TX = GPIO_P0_0);
 SET_CONFIG(CONFIG_UART_DRIVER_MY_RX = GPIO_P0_1);
 SET_CONFIG(CONFIG_UART_DRIVER_MY_CONTROL_FLOW = TRUE);
 SET_CONFIG(CONFIG_UART_DRIVER_MY_PARITY = UART_PARITY_NONE);
+
+
+/* problematic think: */
+#include CONFIG_XYZ
+
+/*
+possible solutions:
+ - postpone parsing file containing those includes to the end, if that config will have just one possible value, e.g. with SET_CONFIG, parse and do #include as usual
+ - if not, resolve all configuration ignoring #include, ignore all errors, redo resolving but with this CONFIG_ fixed to previous value, error if this CONFIG_ was changed during second rerun.
+   repeat if new #include CONFIG_ were discovered.
+ - on the first version return error:
+   Evaluating header file from CONFIG_ option is not implemented.
+   If you REALLY need this feature, see issue https://github.com/..../issues/1234.
+   (the same pattern can be applyied to other not implemented, but possible functionalities)
+*/
+
+// The following will add CONFIG_XYZ dependency to everyting inside "xyz.h"
+#if CONFIG_XYZ
+#include "xyz.h"
+#endif
+
+// bool configs are aways defined, even they are disabled. They have FALSE value in that case
