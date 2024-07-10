@@ -31,7 +31,7 @@ Lost new version contained:
   - no need to create child parsers
 - root tokenizer module has createSolidToken, that:
   - takes: token string value, (file, line or source Token)
-  - matches any known non-whitespace token (reusing regexp from parser: cre`begin-of-text ${standardTokenizerRegExp} end-of-text`
+  - matches any known non-whitespace token (reusing regexp from parser: cre`begin-of-text ${standardTokenizerRegExp} end-of-text`) (can be optimized by reusing just part of regexp)
   - returns new token
   - if this is multi-character string and all matches unknown token, the unknown token is retured containing input string.
   - useful for token generation after ## operator
@@ -43,6 +43,10 @@ Lost new version contained:
   - other args are deeply replaced with parser.parseFragment
   - all chunk are concatenated with joining tokens last and first of the next token (using createSolidToken)
 - tests from boost: https://github.com/boostorg/preprocessor/tree/develop/test
+- on each replacement (macro or arg), start and end of replacement must be checked if two tokens can be next to each other without whitespaces
+  - how to check it: concatenate them, and check if they producing exactly the same tokens (with exception of unknowns, the space is always required).
+  - using similar function to createSolidToken, but creates two tokens (or just verifies them)
+  - if not, adds a space token
 */
 
 import { Tokenizer, Token, TokenType, TokenBase, TokenWithDirective } from "./tokenizer";
