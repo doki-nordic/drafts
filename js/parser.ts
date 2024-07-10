@@ -1,3 +1,49 @@
+/*
+
+Lost new version contained:
+- tokens according to C standard (also regex adjusted to it)
+- tokens additionally contains whitespace and new line (new line only on first state of tokenizer)
+- just one token class, no interfaces
+- token class has clone method that clones and adjust provided properties
+- two levels of tokenizer: one root that reads direcly from file, second provides tokens without directives (directives are handled in that tokenizer)
+- two levels of tokenizer allow reading in the middle of a parser method, not needing to read at the beginning of a loop, this reduces a parser state significantly.
+- Root tokenizer can swith to #include context (triggered by CodeTokenizer and disabled by new line) and it will use different regexp with added header token ("...", <...>)
+- new lines are replaced in CodeTokenizer to whitespace, so parser don't have to handle newline tokens.
+- GenericTokenizer class
+  - contains one input array with: tokens and tokes generators/interators, if item isCodeTokenizer gen/iter it is not deleted from arr before all items are fetched from it
+  - provides: read, readNoWhitespace, peek, peekNoWhitespace, unshift, onRead(token, isTakenFromGenerator, inputArrayLength)
+  - onRead runs before something is read (not peeked) from tokenizer, parser onReadHandler will: remove nested macros, adjust file/line if token was read directly from input
+  - three subclasses: RootTokenizer, CodeTokenizer (handles directives), ArrayTokenizer (read from token array)
+- Macro nesting prevention:
+  - token has optional endNesting array of macros
+  - before unshifting tokens with nesting previntion:
+    - next token is read (with onRead disabled)
+    - token is cloned, if it has endNesting array, it is cloned too
+    - new macro is added to endNesting
+    - token is unshifted (with onRead executed next time it will be read)
+  - parser's onReadHandler will read and clear endNesting array, and removes macros from nesting prevention
+- parser has parseFragment method that can be used to do isolated arguments parsing:
+  - saves old state: tokenizer, sink, nestedMacros,
+  - creates new state: tokenizer from input array, sink to output array, nestedMacros cloned from old ones
+  - do parsing loop
+  - restores old state
+  - it is useful for argument replacement
+  - no need to create child parsers
+- root tokenizer module has createSolidToken, that:
+  - takes: token string value, (file, line or source Token)
+  - matches any known non-whitespace token (reusing regexp from parser: cre`begin-of-text ${standardTokenizerRegExp} end-of-text`
+  - returns new token
+  - if this is multi-character string and all matches unknown token, the unknown token is retured containing input string.
+  - useful for token generation after ## operator
+  - useful for adding spaces between tokens after replacement, e.g. two identifiers cannot be next to each other
+- ## operator:
+  - divides macro body into chunks
+  - args in each chunk are replaced separetly
+  - first and last token on each chunk will do shallow replacement (with exception of first and last token of entire macro body)
+  - other args are deeply replaced with parser.parseFragment
+  - all chunk are concatenated with joining tokens last and first of the next token (using createSolidToken)
+- tests from boost: https://github.com/boostorg/preprocessor/tree/develop/test
+*/
 
 import { Tokenizer, Token, TokenType, TokenBase, TokenWithDirective } from "./tokenizer";
 import { createEmptyObject } from "./utils";
