@@ -281,3 +281,19 @@ possible solutions:
 #endif
 
 // bool configs are aways defined, even they are disabled. They have FALSE value in that case
+
+// Creating driver instance can be behind the macro, e.g.
+
+UARTE_DRIVER(MY_IO);
+SET_CONFIG(CONFIG_UARTE_DRV_MY_IO_BAUND = 115200);
+SET_CONFIG(CONFIG_UARTE_DRV_MY_IO_HW_FLOW = FALSE);
+SET_CONFIG(CONFIG_UARTE_DRV_MY_IO_PARITY = UARTE_PARITY_ODD);
+
+// in uarte_drv.h:
+#define UARTE_DRIVER(name) \
+	TEMPLATE_CONFIG(CONFIG_UARTE_DRV_ ## name, CONFIG_UARTE_DRV_name); \
+	SET_CONFIG(CONFIG_UARTE_DRV_ ## name ## _PERIPHERIAL = RESOURCE_ALLOC(UARTE_RESOURCE_MANAGER));
+#define UARTE_DRIVER_WITH_PERIPHERIAL(name, petipherial) \
+	TEMPLATE_CONFIG(CONFIG_UARTE_DRV_ ## name, CONFIG_UARTE_DRV_name); \
+	SET_CONFIG(CONFIG_UARTE_DRV_ ## name ## _PERIPHERIAL = petipherial);
+
