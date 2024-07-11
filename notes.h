@@ -329,6 +329,16 @@ Resolving values inside a cycle (group):
 
 /*
 It would be nice to have option to disable specific files from being parsed by config-tool.
-* Inside source code: /* sdk-config-tool-ignore */
-* Inside directory: sdk-config-tool.yaml file: ignore: ./**/*
+* Inside source code: /* sdk-config-tool-ignore * /
+* Inside directory: sdk-config-tool.yaml file: ignore: ./** /*
 */
+
+/* For smiplycity, all configs are always defined, for example: */
+#if 0
+#ifndef CONFIG_FOO
+#define CONFIG_FOO 123
+#endif
+ENSURE_CONFIG(CONFIG_FOO < 1000);
+#endif
+
+/* It will define CONFIG_FOO with value 123, but ENSURE_CONFIG is always disabled, so the config will not have a limit */
