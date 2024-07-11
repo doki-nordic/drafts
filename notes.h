@@ -325,3 +325,10 @@ Resolving values inside a cycle (group):
    indicates that the rest must be valid)
 8. Increase interation counter on each full circle around the path, fail if it reached limit.
 */
+
+
+/*
+It would be nice to have option to disable specific files from being parsed by config-tool.
+* Inside source code: /* sdk-config-tool-ignore */
+* Inside directory: sdk-config-tool.yaml file: ignore: ./**/*
+*/
