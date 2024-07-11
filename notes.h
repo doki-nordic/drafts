@@ -299,3 +299,29 @@ SET_CONFIG(CONFIG_UARTE_DRV_MY_IO_TX = GPIO_P0_5);
 	TEMPLATE_CONFIG(CONFIG_UARTE_DRV_ ## name, CONFIG_UARTE_DRV_name); \
 	SET_CONFIG(CONFIG_UARTE_DRV_ ## name ## _PERIPHERIAL = petipherial);
 
+
+
+// Another problem: cyclic dependency should be allowed since even include-based module enabling would not work properly
+/*
+Possible solution:
+1. Travel dependency graph
+2. Remove from it as much as possible (e.g. configs set with the SET_CONFIG())
+3. Detect cycles and group them, each cycle contains exactly one path A -> B -> ... -> Z -> back to A
+4. After grouping one-path cycle, another cycle may reamain that contains groups (they become sub-grops)
+5. This way, from top level view, the graph does not contains cycles
+6. And, each group contains exactly one cycle with single path.
+7. First level of groups can be resolved independently
+
+Resolving values inside a cycle (group):
+0. Initial state: all values in parent group are resolved or has some temporary values
+1. Start with some config (or group) and assign some acceptable value using default value (not the last resolve value) for unknown dependecies
+2. Go over the dependency path backward inside current group and calculate values until we reach starting point
+3. Check if starting point is valid, if yes, successfully resolve group with current values
+4. Check if values from all configs (including sub-groups) were already examinated, if yes, fail
+5. Check if interation counter reached specific value, if yes, fail
+6. Continue walking the path
+7. Before calculating new value, check if current value is valid, if yes, success
+   (no need to go back to starting point, success can be reached at any point since unchaned value at any point of path
+   indicates that the rest must be valid)
+8. Increase interation counter on each full circle around the path, fail if it reached limit.
+*/
