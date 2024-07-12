@@ -356,3 +356,26 @@ ENSURE_CONFIG(CONFIG_FOO < 1000);
 #endif
 
 /* It will define CONFIG_FOO with value 123, but ENSURE_CONFIG is always disabled, so the config will not have a limit */
+
+/* Allow defining some configuration targets, e.g. Debug, Release, Debug_nRF54, Variant1, Variant2:
+  * for make: make Debug, if there are multiple configurations targets:
+    * `make` without paramters will show possible targets and fail (for the first time) or use recently build configuration target
+    * Makefile will just call another, e.g. conf/Debug.makefile
+    * `make program Debug` or `make Debug program` should first do `Debug` and later `program` is such weak dependency is possible in Makefile
+    * otherwise `make program_Debug`
+  * for SES - configuration
+  * for VSC without extension - task that shows menu in terminal or new window
+  * for VSC with extension - button is status bar
+*/
+
+SET_CONFIG(CONFIG_IMAGE_IPC_RADIO = TRUE)
+#if CONFIG(Debug)
+	SET_CONFIG(CONFIG_DEBUG = TRUE)
+	SET_CONFIG(CONFIG_OPTIMIZE = OPTIMIZE_NONE)
+	SET_CONFIG(CONFIG_ASSERT = TRUE)
+#elif CONFIG(Release)
+	SET_CONFIG(CONFIG_DEBUG = FALSE)
+	SET_CONFIG(CONFIG_OPTIMIZE = OPTIMIZE_SIZE)
+	SET_CONFIG(CONFIG_ASSERT = FALSE)
+#endif
+
