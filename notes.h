@@ -141,6 +141,20 @@ IMAGE_ADD(RAD);
 IMAGE_SOURCE("./*.c");
 #include "image_def/radio.h"
 
+/* A way to add sources, include directories, defines, libraries, library directories, e.t.c to current image */
+CURRENT_IMAGE_SOURCE("../src/*.c");
+CURRENT_IMAGE_SOURCE_NO_CONFIG("../ext/lib/*.c", SOME_LIB_DEBUG=1, SOME_LIB_OPTION=CONFIG_SOME_LIB_OPTION); // defines just for group of files
+CURRENT_IMAGE_DEFINE(MY_DEF=1);
+CURRENT_IMAGE_LIBRARY("../lib/nfc/nfc.a");
+
+// Maybe also pre-/post-build steps
+CURRENT_IMAGE_PRE_BUILD("make -c ${SDK_PATH}/ext/some_lib");
+// SDK should have a bash binary included and those commands will be executed from bash.
+// This allows unified commands on all platforms.
+
+// Maybe unify image and source/libs handling by providing image name for those macros, and current image is CURRENT
+IMAGE_SOURCE(RAD, "../rad/src/*.c");
+IMAGE_LIB(CURRENT, "../lib/some_lib.a");
 
 /*
 
