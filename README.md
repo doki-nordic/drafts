@@ -215,6 +215,8 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
 
 `sdk-config-tool '*.c'` or with GUI tool
 
+`make`
+
 ## Multi-target
 
 `#if CONFIG(Debug)`
