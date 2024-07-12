@@ -232,7 +232,6 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
 
 ## Using resources (without drivers)
 
-`RESOURCE_ALLOC(UARTE_RESOURCE_MANAGER)` \
 `RESOURCE_RESERVE(UARTE_RESOURCE_MANAGER, UARTE133)`
 
 > with drivers: `UART_DRIVER(my_instance);`
