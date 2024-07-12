@@ -356,6 +356,7 @@ ENSURE_CONFIG(CONFIG_FOO < 1000);
 #endif
 
 /* It will define CONFIG_FOO with value 123, but ENSURE_CONFIG is always disabled, so the config will not have a limit */
+// ^^ this is dengerous, must be reconsidered
 
 /* Allow defining some configuration targets, e.g. Debug, Release, Debug_nRF54, Variant1, Variant2:
   * for make: make Debug, if there are multiple configurations targets:
@@ -379,3 +380,16 @@ SET_CONFIG(CONFIG_IMAGE_IPC_RADIO = TRUE)
 	SET_CONFIG(CONFIG_ASSERT = FALSE)
 #endif
 
+/*
+GUI configuration tool should allow to select where to set specific option value: in the source code or in current build directory.
+Without GUI, in the source code: SET_CONFIG(...), in current build directory: config-tool --set "CONFIG_FOO=TRUE"
+or config-tool --set "Debug:CONFIG_FOO=TRUE"
+Config options in build directory have higher priority than SET_CONFIG() and overrides them without error.
+In general. the priority should be:
+1. Build value             - cannot be conflict
+2. SET_CONFIG and #define  - error if conflict
+3. ENSURE_CONFIG           - error if not met
+4. PREFER_CONFIG           - no error if not met
+5. DEFAULT_CONFIG          - override default from definition, error if multiple default values that mets all of above conditions
+6. default from definition - error if multiple default values that mets all of above conditions and not overriden by DEFAULT_CONFIG
+*/
