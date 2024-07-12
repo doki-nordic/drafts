@@ -215,7 +215,7 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
 
 `sdk-config-tool '*.c'` or with GUI tool
 
-`make`
+`make` or build in IDE, e.g. Ctrl+Shift+B in VSCode
 
 ## Multi-target
 
