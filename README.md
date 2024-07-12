@@ -207,3 +207,31 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
   * Standard extensions: ENUMERATE_CONFIG, Project generation, Resource manager
   * Example of additional extension: package for bootloader generator, merge hex
 
+# What user need to know
+
+## Basic
+
+`SET_CONFIG(CONFIG_FOO = 2)`
+
+`sdk-config-tool '*.c'` or with GUI tool
+
+## Multi-target
+
+`#if CONFIG(Debug)`
+
+## Multi-image (only custom images)
+
+`IMAGE_SOURCE(RAD, "../radio/**/*.c");` \
+`IMAGE_DEFINE` \
+`IMAGE_INCLUDE` \
+`...`
+
+> standard image: `SET_CONFIG(CONFIG_IPC_RADIO = TRUE)`
+
+## Using resources (without drivers)
+
+`RESOURCE_ALLOC(UARTE_RESOURCE_MANAGER)` \
+`RESOURCE_RESERVE(UARTE_RESOURCE_MANAGER, UARTE133)`
+
+> with drivers: `UART_DRIVER(my_instance);`
+
