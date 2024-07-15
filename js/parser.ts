@@ -17,7 +17,7 @@ Lost new version contained:
 - Macro nesting prevention:
   - token has optional endNesting array of macros
   - before unshifting tokens with nesting previntion:
-    - next token is read (with onRead disabled)
+    - next token is read (with onRead disabled, e.g. first peek(), and next replace())
     - token is cloned, if it has endNesting array, it is cloned too
     - new macro is added to endNesting
     - token is unshifted (with onRead executed next time it will be read)
