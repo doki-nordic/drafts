@@ -1,17 +1,11 @@
 /*
 
 Lost new version contained:
-- tokens according to C standard (also regex adjusted to it)
-- tokens additionally contains whitespace and new line (new line only on first state of tokenizer)
-- just one token class, no interfaces
 - token class has clone method that clones and adjust provided properties
 - two levels of tokenizer: one root that reads direcly from file, second provides tokens without directives (directives are handled in that tokenizer)
 - two levels of tokenizer allow reading in the middle of a parser method, not needing to read at the beginning of a loop, this reduces a parser state significantly.
-- Root tokenizer can swith to #include context (triggered by CodeTokenizer and disabled by new line) and it will use different regexp with added header token ("...", <...>)
 - new lines are replaced in CodeTokenizer to whitespace, so parser don't have to handle newline tokens.
 - GenericTokenizer class
-  - contains one input array with: tokens and tokes generators/interators, if item isCodeTokenizer gen/iter it is not deleted from arr before all items are fetched from it
-  - provides: read, readNoWhitespace, peek, peekNoWhitespace, unshift, onRead(token, isTakenFromGenerator, inputArrayLength)
   - onRead runs before something is read (not peeked) from tokenizer, parser onReadHandler will: remove nested macros, adjust file/line if token was read directly from input
   - three subclasses: RootTokenizer, CodeTokenizer (handles directives), ArrayTokenizer (read from token array)
 - Macro nesting prevention:
@@ -47,6 +41,13 @@ Lost new version contained:
   - how to check it: concatenate them, and check if they producing exactly the same tokens (with exception of unknowns, the space is always required).
   - using similar function to createSolidToken, but creates two tokens (or just verifies them)
   - if not, adds a space token
+
+clang: the following code will end with error if we do it in two steps clang -E, clang -c
+#define a() u
+#define b "text"
+void* x = a()b;
+
+
 */
 
 import { Tokenizer, Token, TokenType, TokenBase, TokenWithDirective } from "./tokenizer";

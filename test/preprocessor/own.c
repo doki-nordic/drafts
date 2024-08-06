@@ -23,7 +23,7 @@ __FILE__
 FOO(__FILE__)
 
 // --------------------- unexpected "}"
-// expect error: Expecting "(" but found "{".
+// expect error: unexpected '}', expecting ')'
 int bar() {
     FOO(
     return 0;
@@ -60,6 +60,12 @@ BAR(a)
 BAR(b)
 BAR(c)
 
+// --------------------- counter multiple times
+// expect: 0 0 4 1 1 2 2 3 3
+#define C __COUNTER__
+#define F(x, y, z, w) x x C y y z z w w
+F(__COUNTER__, __COUNTER__, C, C)
+
 // --------------------- line number
 // expect: 5 6 7
 __LINE__
@@ -86,11 +92,11 @@ BAR(c)
 #include "helper/line.h"
 
 // --------------------- unterminated macro arguments
-// expect error: Unterminated macro arguments.
+// expect error: unterminated argument list invoking macro "FOO"
 FOO(1, 2, 3
 
 // ====================== unterminated macro parameters
-// expect error: Invalid macro parameters.
+// expect error: expecting ')' in macro parameter list
 #define X(a, b, c, ...
 
 // ====================== line break before macro parameters
@@ -144,6 +150,26 @@ STRV2(
 // expect: ""
 STRV2(
 )
+
+// ---------------------- stringify with escape sequences
+STR2(\)    // expect: "\\"
+STR2(1\2)  // expect: "1\\2"
+STR2(3\n)  // expect: "1\\n"
+STR2("4\n")// expect: "\"test\\n\""
+
+// ----------------------- token joining in string
+// expect: "--" "+-"
+#define a1(x) -x-
+#define a2(x) +x-
+STR2(a1())
+STR2(a2())
+
+// ----------------------- token joining without string
+// expect: - - +-
+#define a1(x) -x-
+#define a2(x) +x-
+a1()
+a2()
 
 // ====================== map enumerator
 // expect: {Lorem} {ipsum} {dolor} {sit} {amet} {consectetur} {adipiscing} {elit} {Curabitur} {ac} {lobortis} {tortor}

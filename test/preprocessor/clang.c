@@ -21,7 +21,7 @@ const char timestamp[] = __TIMESTAMP__;
 #define M1()
 
 // --------------------- unterminated macro args
-// expect error: Unterminated macro arguments.
+// expect error: unterminated argument list invoking macro "M1"
 M1(
 
 /*
