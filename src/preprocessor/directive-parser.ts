@@ -59,6 +59,7 @@ export class DirectiveParser extends GenericTokenizer {
             case 'error':
             case 'warning':
             case 'pragma':
+            case '':
                 this.listener.onDirective(name, token, [this.fetchRawToken(input)]);
                 break;
             default:

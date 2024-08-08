@@ -11,7 +11,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/src/preprocessor/preprocessor.ts",
+            "program": "${workspaceFolder}/test/preprocessor/debug.ts",
             "outFiles": [
                 "${workspaceFolder}/dist/**/*.js"
             ],

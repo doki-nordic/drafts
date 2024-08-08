@@ -15,7 +15,6 @@ interface PatternGroups {
     punctuator?: string;
     unknown?: string;
     endOfText?: string;
-    directivePrefix?: string;
     directiveHash?: string;
     directiveName?: string;
     newLine?: string;
@@ -96,7 +95,7 @@ const ppTokenPattern = cre.legacy.sticky`
     }
 `;
 
-const directivePrefixPattern = cre.legacy`
+const directiveHashPattern = cre.legacy`
     1: {
         {
             // whitespace
@@ -114,13 +113,9 @@ const optWS = cre.legacy`repeat [ \t]`;
 
 const textPattern = cre.legacy.sticky`
     {
-        begin-of-line
-        directivePrefix: {
-            ${optWS}
-            repeat {
-                '/*', lazy-repeat any, '*/'
-                ${optWS}
-            }
+        lookbehind {
+            begin-of-line
+            repeat (whitespace or ('/*', lazy-repeat any, '*/'))
         }
         directiveHash: {
             "#"
@@ -130,7 +125,7 @@ const textPattern = cre.legacy.sticky`
                 ${optWS}
             }
         }
-        directiveName: {
+        directiveName: optional {
             [a-zA-Z_$]
             repeat [a-zA-Z0-9_$]
         }
@@ -220,19 +215,9 @@ export class SourceTokenizer {
                 yield new Token('whitespace', offset, this.sourceMap, '\n', groups.slComment);
             } else if (groups.directiveName !== undefined) {
                 let actualOffset = offset;
-                for (let part of groups.directivePrefix!.split(directivePrefixPattern)) {
-                    if (part.length !== 0) {
-                        if (part.trim().length === 0) {
-                            yield new Token('whitespace', actualOffset, this.sourceMap, part);
-                        } else {
-                            yield new Token('whitespace', actualOffset, this.sourceMap, ' ', part);
-                        }
-                        actualOffset += part.length;
-                    }
-                }
                 let hashTokens: Token[] = [];
                 let hashOffset = actualOffset;
-                for (let part of groups.directiveHash!.split(directivePrefixPattern)) {
+                for (let part of groups.directiveHash!.split(directiveHashPattern)) {
                     if (part.length !== 0) {
                         if (part.trim().length === 0) {
                             hashTokens.push(new Token('whitespace', hashOffset, this.sourceMap, part));
@@ -285,8 +270,8 @@ const validSingleTokenPattern = cre.legacy`
     `;
 
 const invalidSingleTokenPattern = cre.legacy`
-    // There a token, but since 'validSingleTokenPattern' does not detected anything,
-    // there are more characters.
+    // There is a token, but since 'validSingleTokenPattern' does not detected anything,
+    // there are more characters than just a single token.
     ${ppTokenSolidPattern}
     `;
 

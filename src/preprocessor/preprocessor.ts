@@ -3,7 +3,7 @@ import { GenericTokenizer } from "./generic-tokenizer";
 import { KnownDirectives, Listener } from "./listener";
 import { SourceMap } from "./source-map";
 import { parseSingleToken } from "./source-tokenizer";
-import { Token } from "./token";
+import { Token, TokenType } from "./token";
 import assert from "node:assert";
 
 const oppositeBracket: { [key: string]: string } = {
@@ -46,13 +46,13 @@ const builtinMacros: MacroDict = {
 }
 
 
-function trimTokens(tokens: Token[]): Token[] {
+function trimTokens(tokens: Token[], type: TokenType = 'whitespace'): Token[] {
     let start = 0;
-    while (start < tokens.length && tokens[start].type === 'whitespace') {
+    while (start < tokens.length && tokens[start].type === type) {
         start++;
     }
     let end = tokens.length;
-    while (end > start && tokens[end - 1].type === 'whitespace') {
+    while (end > start && tokens[end - 1].type === type) {
         end--;
     }
     return tokens.slice(start, end);
@@ -153,43 +153,25 @@ export class Preprocessor {
     }
 
     private parseMacroReplacement(macro: Macro, token: Token) {
-        // TODO: if (macro.callback) ...
-        if (macro.parameters) {
-            // Function-like macro
-            this.parseFunctionReplacement(macro, token);
-        } else {
-            // Object-like macro
-            this.preventMacro(macro);
-            let tokens = macro.tokens;
-            if (macro.callback) {
-                let customResult = macro.callback(this, token, macro, [], [], Object.create(null));
-                if (customResult === undefined) {
-                    // Use macro as-is
-                } else if (customResult instanceof Macro) {
-                    // Use different macro instead
-                    macro = customResult;
-                    this.preventMacro(macro);
-                    tokens = macro.tokens;
-                } else {
-                    // Use tokens
-                    tokens = customResult;
-                }
-            }
-            this.reuseTokens(tokens);
-        }
-    }
-
-    private parseFunctionReplacement(macro: Macro, token: Token) {
         let overriddenMacro: Macro | undefined = undefined;
         // Read all the following arguments (and commas between them)
-        let [args, commas] = this.readArguments(macro, token);
-        // If there are no arguments, assume it is simple token (not a macro invocation)
-        if (args === undefined || commas === undefined) {
-            this.sink(token);
-            return;
+        let args: Token[][] | undefined;
+        let commas: Token[] | undefined;
+        let argsByName: { [name: string]: Token[] };
+        if (macro.parameters) {
+            [args, commas] = this.readArguments(macro, token);
+            // If there are no arguments, assume it is simple token (not a macro invocation)
+            if (args === undefined || commas === undefined) {
+                this.sink(token);
+                return;
+            }
+            // Assign arguments to macro parameters
+            argsByName = this.assignArguments(macro, token, args, commas);
+        } else {
+            args = [[]];
+            commas = [];
+            argsByName = Object.create(null);
         }
-        // Assign arguments to macro parameters
-        let argsByName = this.assignArguments(macro, token, args, commas);
         if (macro.callback) {
             let customResult = macro.callback(this, token, macro, args, commas, argsByName);
             if (customResult === undefined) {
@@ -198,7 +180,9 @@ export class Preprocessor {
                 // Use different macro instead
                 overriddenMacro = macro;
                 macro = customResult;
-                argsByName = this.assignArguments(macro, token, args, commas);
+                if (macro.parameters) {
+                    argsByName = this.assignArguments(macro, token, args, commas);
+                }
             } else {
                 // Use tokens directly
                 this.preventMacro(macro);
@@ -206,14 +190,21 @@ export class Preprocessor {
                 return;
             }
         }
-        // Replace arguments prefixed with '#' by strings
-        let tokens = this.stringifyArguments(macro, argsByName);
-        // Split tokens into chunks separated by '##'
-        let chunks = this.divideIntoChunks(tokens);
-        // Replace arguments
-        chunks = this.replaceArguments(chunks, argsByName);
-        // Join chunks
-        tokens = this.joinChunks(chunks);
+        let tokens: Token[];
+        if (macro.parameters) {
+            // Replace arguments prefixed by '#' by strings
+            tokens = this.stringifyArguments(macro.tokens, argsByName);
+        } else {
+            tokens = macro.tokens;
+        }
+        // Remove white-spaces around '##' operator
+        tokens = this.hashHashTrim(tokens);
+        if (tokens[0]?.type === '##' || tokens.at(-1)?.type === '##') {
+            this.message('error', '\'##\' cannot appear at either end of a macro expansion', tokens[0]);
+            tokens = trimTokens(tokens, '##');
+        }
+        // Replace arguments with its content and concatenate with the '##' operator
+        tokens = this.argumentSubstitution(tokens, argsByName);
         // Macro recursion prevention ends here
         this.preventMacro(macro);
         if (overriddenMacro !== undefined) {
@@ -223,6 +214,100 @@ export class Preprocessor {
         this.reuseTokens(tokens);
     }
 
+    private hashHashTrim(tokens: Token[]): Token[] {
+        let newTokens: Token[] = [];
+        for (let i = 0; i < tokens.length; i++) {
+            let token = tokens[i];
+            if (token.type === '##') {
+                while (newTokens.length > 0 && newTokens.at(-1)!.type === 'whitespace') {
+                    newTokens.pop();
+                }
+                while (i + 1 < tokens.length && tokens[i + 1].type === 'whitespace') {
+                    i++;
+                }
+            }
+            newTokens.push(token);
+        }
+        return trimTokens(newTokens);
+    }
+
+    private argumentSubstitution(tokens: Token[], argsByName: { [name: string]: Token[]; }): Token[] {
+        if (tokens.length === 0) {
+            return [];
+        }
+        let argsParsed: { [name: string]: Token[]; } = Object.create(null);
+        let lastSubstituted = false;
+        let input = new GenericTokenizer(tokens);
+        let output = [input.read()];
+        while (true) {
+            let lastToken = output.at(-1) as Token;
+            if (input.peek()?.type === '##') {
+                // Next token is ##, so we need to do concatenation
+                output.pop();
+                // If the last one was not substituted yet, do shallow substitution
+                if (!lastSubstituted) {
+                    let repl = this.shallowReplacement(lastToken, argsByName, true);
+                    lastToken = repl.pop() as Token;
+                    output.push(...repl);
+                    lastSubstituted = true;
+                }
+                // Read and substitute the next tokens
+                let hashHashToken = input.read();
+                let nextTokenBeforeReplacement = input.read();
+                while (nextTokenBeforeReplacement.type === '##') {
+                    nextTokenBeforeReplacement = input.read();
+                }
+                let followingTokens = this.shallowReplacement(nextTokenBeforeReplacement, argsByName, true);
+                let nextToken = followingTokens.shift() as Token;
+                // Parse concatenated tokens
+                let newToken = parseSingleToken(lastToken.value + nextToken.value, hashHashToken.sourceMap, hashHashToken.offset);
+                // Push the resulting token and the following tokens onto the output
+                if (!newToken) {
+                    this.message('error', `pasting "${lastToken.value}" and "${nextToken.value}" does not give a valid preprocessing token`, hashHashToken);
+                    output.push(lastToken, nextToken, ...followingTokens);
+                } else {
+                    output.push(newToken, ...followingTokens);
+                }
+                // Don't read the next token since there might be another ## to process
+                continue;
+            } else if (lastToken.type === 'placemarker') {
+                // next token is not ##, so we can now skip any placemarkers and take care of next token
+                output.pop();
+            } else if (lastSubstituted) {
+                // last token was already substituted and we are not concatenating, keep this and move to the next token
+            } else if (lastToken.type === "identifier" && argsByName[lastToken.value]) {
+                // do deep substitution
+                output.pop();
+                let argName = lastToken.value;
+                if (!argsParsed[argName]) {
+                    argsParsed[argName] = this.parseFragment(argsByName[argName]);
+                }
+                output.push(...argsParsed[argName]);
+            }
+            // Move next token from input to output and repeat the loop to process it
+            let nextToken = input.read();
+            if (nextToken.type === 'end') {
+                break;
+            }
+            output.push(nextToken);
+            lastSubstituted = false;
+        }
+        return output;
+    }
+
+    private shallowReplacement(token: Token, argsByName: { [name: string]: Token[] }, addPlacemarker?: boolean): Token[] {
+        if (token.type !== 'identifier' || argsByName[token.value] === undefined) {
+            return [token];
+        } else {
+            let result = trimTokens(argsByName[token.value]); // TODO: trimTokens: Is this should be done earlier?
+            if (result.length === 0 && addPlacemarker) {
+                return [new Token('placemarker', token.offset, token.sourceMap, '')];
+            } else {
+                return result;
+            }
+        }
+    }
+
     private reuseTokens(tokens: Token[]) {
         for (let token of tokens) {
             token.reused = true;
@@ -230,96 +315,27 @@ export class Preprocessor {
         this.source.push(tokens);
     }
 
-    private joinChunks(chunks: Token[][]): Token[] {
-        // Remove empty chunks
-        chunks = chunks
-            .map(chunk => trimTokens(chunk))
-            .filter(chunk => chunk.length > 0);
-        // Put first chunk directly into result array
-        let result: Token[] = [...(chunks[0] ?? [])];
-        // Append remaining chunks by joining last token in result with first token in the chunk
-        for (let i = 1; i < chunks.length; i++) {
-            let chunk = chunks[i];
-            let prev = result.pop() as Token;
-            let next = chunk.shift() as Token;
-            let newToken = parseSingleToken(prev.value + next.value, prev.sourceMap, prev.offset);
-            if (!newToken) {
-                this.message('error', `pasting "${prev.value}" and "${next.value}" does not give a valid preprocessing token`, prev);
-                result.push(prev, next, ...chunk);
-            } else {
-                result.push(newToken, ...chunk);
-            }
-        }
-        return result;
-    }
-
-    private replaceArguments(chunks: Token[][], argsByName: { [name: string]: Token[]; }): Token[][] {
-        let argsParsed: { [name: string]: Token[]; } = Object.create(null);
-        let newChunks: Token[][] = [];
-        // for each chunk
-        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-            let chunk = chunks[chunkIndex];
-            let newChunk: Token[] = [];
-            newChunks.push(newChunk);
-            // for each token in chunk
-            for (let tokenIndex = 0; tokenIndex < chunk.length; tokenIndex++) {
-                let token = chunk[tokenIndex];
-                let argName = token.value;
-                if (token.type !== 'identifier' || argsByName[argName] === undefined) {
-                    // pass token to output if it is not an argument name
-                    newChunk.push(token);
-                } else {
-                    let arg = argsByName[argName];
-                    let isPasting =
-                        (tokenIndex === 0 || tokenIndex === chunk.length - 1)
-                        && !(chunkIndex === 0 && tokenIndex === 0)
-                        && !(chunkIndex === chunks.length - 1 && tokenIndex === chunk.length - 1);
-                    // check if this token is connecting with other with the '##' operator
-                    if (!isPasting) {
-                        // do deep replacement on this argument and pass to the output
-                        if (!argsParsed[argName]) {
-                            argsParsed[argName] = this.parseFragment(arg);
-                        }
-                        arg = argsParsed[argName];
-                    }
-                    newChunk.push(...arg);
-                }
-            }
-        }
-        return newChunks;
-    }
-
-
-    private divideIntoChunks(tokens: Token[]) {
-        // TODO: check if tokens does not start or end with ##
-        let result: Token[][] = [[]];
-        for (let token of tokens) {
-            if (token.type === '##') {
-                result.push([]);
-            } else {
-                result.at(-1)!.push(token);
-            }
-        }
-        return result.map(chunk => trimTokens(chunk));
-    }
-
-    private stringifyArguments(macro: Macro, argsByName: { [name: string]: Token[]; }) {
+    private stringifyArguments(tokens: Token[], argsByName: { [name: string]: Token[]; }) {
         let index = 0;
         let result: Token[] = [];
-        while (index < macro.tokens.length) {
+        while (index < tokens.length) {
             // get each token
-            let token = macro.tokens[index];
+            let token = tokens[index];
             index++;
             if (token.type === '#') {
                 // check if the following token is an argument name
-                let next: Token | undefined = macro.tokens[index];
+                let nextIndex = index;
+                while (nextIndex < tokens.length && tokens[nextIndex].type === 'whitespace') {
+                    nextIndex++;
+                }
+                let next: Token | undefined = tokens[nextIndex];
                 let name = next?.value;
                 if (next?.type !== 'identifier' || argsByName[name] === undefined) {
                     this.message('error', `'#' is not followed by a macro parameter`, token);
                     result.push(token);
                     continue;
                 } else {
-                    index++;
+                    index = nextIndex + 1;
                 }
                 // get argument tokens
                 let arg = argsByName[name];
@@ -469,37 +485,27 @@ export class Preprocessor {
         }
     }
 
-    public parseIncludePath(directive: Token, content: Token[]): string | undefined {
+    public parseIncludePath(directive: Token, content: Token[], preventReplacement?: boolean): string | undefined {
         content = trimTokens(content);
-        if (content.length === 0) {
-            this.message('error', '#include expects "FILENAME" or <FILENAME>, nothing given');
-            return undefined;
-        } else if (content.length === 1) {
-            let token = content[0];
-            if (token.type === 'header') {
-                return token.value;
-            } else if (token.type === 'string') {
-                return token.value.substring(1, token.value.length - 1); // TODO: string unescape
+        if (content.length > 0) {
+            if (content.length === 1 && content[0].type === 'header') {
+                return content[0].value;
+            } else if (content.length === 1 && content[0].type === 'string') {
+                return content[0].value.substring(1, content[0].value.length - 1); // TODO: string unescape
+            } else if (!preventReplacement) {
+                let newContent = this.parseFragment(content);
+                return this.parseIncludePath(directive, newContent, true);
             } else {
-                console.log(content);
-                this.message('error', '#include expects "FILENAME" or <FILENAME>, invalid token given');
-                return undefined;
+                let open = content[0];
+                let close = content.at(-1) as Token;
+                if (open.type === '<' && close.type === '>') {
+                    let pathTokens = content.slice(1, -1);
+                    return pathTokens.map(token => token.value).join(''); // TODO: stringify as macro arguments
+                }
             }
-        } else if (content.length >= 3) {
-            let open = content[0];
-            let close = content.at(-1) as Token;
-            if (open.type !== '<' || close.type !== '>') {
-                console.log(content);
-                this.message('error', '#include expects "FILENAME" or <FILENAME>, invalid tokens given');
-                return undefined;
-            }
-            let pathTokens = content.slice(1, -1);
-            return pathTokens.map(token => token.value).join(''); // TODO: stringify as macro arguments
-        } else {
-            console.log(content);
-            this.message('error', '#include expects "FILENAME" or <FILENAME>, invalid tokens given');
-            return undefined;
         }
+        this.message('error', '#include expects "FILENAME" or <FILENAME>');
+        return undefined;
     }
 
     public parseDefine(directiveToken: Token, tokens: Token[], addToParser?: boolean): Macro | undefined {

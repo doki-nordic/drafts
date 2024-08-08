@@ -14,6 +14,7 @@ export type TokenType =
     | 'character'   // character literal (with optional prefix)
     | 'string'      // string literal (with optional prefix)
     | 'unknown'     // unknown character
+    | 'placemarker' // special temporary token used during ## processing (according to C standard)
     | '...' | '<<=' | '>>='
     | '->' | '++' | '--' | '<<' | '>>' | '<=' | '>=' | '==' | '!=' | '&&'
     | '||' | '*=' | '/=' | '%=' | '+=' | '-=' | '&=' | '^=' | '|=' | '##'

@@ -5,7 +5,7 @@ import { KnownDirectives, Listener } from '../../src/preprocessor/listener';
 import { Preprocessor } from '../../src/preprocessor/preprocessor';
 import { Token } from '../../src/preprocessor/token';
 
-export function preprocess(fileName: string, source: string) {
+export function preprocess(fileName: string, source: string, includePaths: string[]): [string, string[], string[]] {
 
     let tokens: Token[] = [];
     let errors: string[] = [];
@@ -29,14 +29,30 @@ export function preprocess(fileName: string, source: string) {
                 case 'include': {
                     let headerPath = pp.parseIncludePath(directive, content);
                     if (headerPath !== undefined) {
-                        let realPath = path.join('test/preprocessor', headerPath);
-                        let source = fs.readFileSync(realPath, 'utf8');
-                        pp.includeSource(headerPath, source);
+                        for (let tryPath of includePaths) {
+                            let realPath = path.join(tryPath, headerPath);
+                            if (fs.existsSync(realPath)) {
+                                let source = fs.readFileSync(realPath, 'utf8');
+                                pp.includeSource(headerPath, source);
+                                return;
+                            }
+                        }
+                        errors.push(`header file "${headerPath}" cannot be found`);
                     }
                     break;
                 }
+                case 'error':
+                case 'if':
+                case 'elif':
+                case 'else':
+                case 'endif':
+                case 'ifdef':
+                case 'ifndef': {
+                    // TODO: implement those
+                }
                 case 'pragma':
-                    // ignore pragma directives
+                case '':
+                    // ignored directives
                     break;
                 default:
                     throw new Error(`Not implemented: onDirective: "${name}"`);

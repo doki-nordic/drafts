@@ -104,6 +104,7 @@
   },
   "include": [
     //"./js/**/*.ts",
-    "./src/**/*.ts"
+    "./src/**/*.ts",
+    "./test/preprocessor/debug.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import { Token } from "./token";
 
-export type KnownDirectives = 'if' | 'ifdef' | 'ifndef' | 'elif' | 'else' | 'endif' | 'include' | 'define' | 'undef' | 'line' | 'error' | 'warning' | 'pragma';
+export type KnownDirectives = 'if' | 'ifdef' | 'ifndef' | 'elif' | 'else' | 'endif' | 'include' | 'define' | 'undef' | 'line' | 'error' | 'warning' | 'pragma' | '';
 
 
 export interface Listener {

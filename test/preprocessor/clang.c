@@ -7,7 +7,7 @@
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/SOURCE_DATE_EPOCH.c
 
-// ===================== timestamp
+// =============================================== timestamp
 // expect: const char date[] = "Jan  1 1970";
 // expect: const char time[] = "00:00:00";
 // expect: const char timestamp[] = "Thu Jan  1 00:00:00 1970";
@@ -17,10 +17,10 @@ const char timestamp[] = __TIMESTAMP__;
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/annotate_in_macro_arg.c
 
-// =====================
+// ===============================================
 #define M1()
 
-// --------------------- unterminated macro args
+// ----------------------------------------------- unterminated macro args
 // expect error: unterminated argument list invoking macro "M1"
 M1(
 
@@ -32,7 +32,7 @@ M1(
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/macro_arg_directive.c
 
-// ===================== define in args
+// =============================================== define in args
 // expect: enum { n = 5 };
 #define a(x) enum { x }
 a(n =
@@ -40,7 +40,7 @@ a(n =
 #define a 5
   a);
 
-// ===================== pragma in args
+// =============================================== pragma in args
 // expect:
 #define M(A)
 M(
@@ -49,7 +49,7 @@ M(
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/macro_arg_empty.c
 
-// ===================== macro arg empty
+// =============================================== macro arg empty
 // expect: [] [ ] [ ] [ ] [ ] [ ] [] [ ] [ ]
 #define FOO(x) x
 #define BAR(x) x x
@@ -58,7 +58,7 @@ M(
 
 // https://github.com/llvm/llvm-project/blob/ac9d34a2eed4c4d58edf25b92e397faa76170d00/clang/test/Preprocessor/macro_arg_keyword.c
 
-// ===================== macro arg keyword
+// =============================================== macro arg keyword
 // expect: xxx-xxx
 #define foo(return) return-return
 foo(xxx)

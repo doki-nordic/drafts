@@ -12,7 +12,8 @@
     "tsx": "^4.16.0",
     "typedoc": "^0.26.3",
     "typescript": "^5.5.2",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "tar": "^7.4.3"
   },
   "dependencies": {
     "con-reg-exp": "^0.2.4"

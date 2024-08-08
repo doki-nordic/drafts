@@ -2,8 +2,7 @@
 import * as fs from 'node:fs';
 import cre from 'con-reg-exp';
 import { describe, expect, test } from 'vitest';
-import { Listener, Parser, Macro, MacroArgument } from '../../js/parser';
-import { Token, TokenWithDirective } from '../../js/tokenizer';
+import { preprocess } from './utils';
 
 const ws = cre`repeat [\t ]`;
 
@@ -89,81 +88,13 @@ function normalizeOutput(text: string): string {
     return parts.join(' ');
 }
 
-function runParser(input: string, warnings: string[], fileName: string): string {
-
-    let out = '';
-    
-    let listener: Listener = {
-    
-        defineDirective(parser: Parser, token: TokenWithDirective): void {
-            parser.addMacro(parser.parseMacroDefinition(token.data.tokens));
-        },
-    
-        undefDirective(parser: Parser, token: TokenWithDirective): void {
-            parser.removeMacro(parser.parseUndef(token.data.tokens));
-        },
-    
-        includeDirective(parser: Parser, token: TokenWithDirective): void {
-            let { path, system } = parser.parseIncludePath(token.data.tokens);
-            let fullPath = `test/preprocessor/${path}`;
-            if (!fs.existsSync(fullPath)) {
-                throw new Error(`Include file "${path}" not found.`);
-            }
-            let text = fs.readFileSync(fullPath, 'utf8');
-            parser.include(text, path);
-        },
-    
-        ifDirective(parser: Parser, token: TokenWithDirective): void {
-            
-        },
-    
-        elifDirective(parser: Parser, token: TokenWithDirective): void {
-            
-        },
-    
-        elseDirective(parser: Parser, token: TokenWithDirective): void {
-            
-        },
-    
-        endifDirective(parser: Parser, token: TokenWithDirective): void {
-            
-        },
-    
-        unknownDirective(parser: Parser, token: TokenWithDirective): void {
-            
-        },
-    
-        objectMacro(parser: Parser, macro: Macro, token: Token): void {
-            parser.objectReplacement(macro);
-        },
-    
-        functionMacro(parser: Parser, macro: Macro, allTokens: Token[], args: MacroArgument[]): void {
-            parser.functionReplacement(macro, args);
-        },
-    
-        warning(parser: Parser | Parser, tokens: Token[], message: string): void {
-            warnings.push(message);
-        },
-    
-        error(parser: Parser | Parser, tokens: Token[], message: string): void {
-            throw new Error(message);
-        },
-    
-        code(parser: Parser, token: Token): void {
-            let whitespace = token.whitespace;
-            if (whitespace.length === 0) {
-                let lastChar = out.length > 0 ? out[out.length - 1] : '!';
-                if (lastChar.match(/[a-z0-9_$]/i)) whitespace = ' ';
-            }
-            out += whitespace;
-            out += token.value;
-        }
+function runParser(input: string, warningsArg: string[], fileName: string): string {
+    let [output, errors, warnings] = preprocess(fileName, input, ['test/preprocessor']);
+    if (errors.length) {
+        throw new Error(errors[0]);
     }
-
-    let p = new Parser(listener);
-    p.parse(input, fileName);
-
-    return out;
+    warningsArg.push(...warnings);
+    return output;
 }
 
 function runTest(name: string, prologue: string, text: string, fileName: string): void {
@@ -187,7 +118,7 @@ function runTest(name: string, prologue: string, text: string, fileName: string)
             expect(() => runParser(textReplaced, warnings, fileName))
                 .toThrow(cre.cache`begin-of-text, "${expectedError}", end-of-text`);
         } else {
-            let output = (runParser(textReplaced, warnings, fileName));
+            let output = runParser(textReplaced, warnings, fileName);
             if (expectedText !== undefined) {
                 expect(normalizeOutput(output))
                     .toEqual(normalizeOutput(expectedText));
@@ -227,24 +158,3 @@ for (let fileName of fs.readdirSync('test/preprocessor')) {
         describe(fileName, () => runTestsForFile(`test/preprocessor/${fileName}`, fileName));
     }
 }
-
-/*
-
-describe('Capture', () => {
-    test('Positional', () => {
-        expect(cre`1: any`).toStrictEqual(/(.)/su);
-        expect(cre`1: any, 2: digit`).toStrictEqual(/(.)(\d)/su);
-        expect(cre`1: (any, 2: digit)`).toStrictEqual(/(.(\d))/su);
-    });
-    test('Positional failure', () => {
-        expect(() => cre`0: any`).toThrow();
-        expect(() => cre`2: any`).toThrow();
-        expect(() => cre`1: (any, 1: digit)`).toThrow();
-        expect(() => cre`first: digit, 1: any`).toThrow();
-    });
-    test('Mixed', () => {
-        expect(cre`first: any, 2: digit`).toStrictEqual(/(?<first>.)(\d)/su);
-        expect(cre`first: (any, 2: digit)`).toStrictEqual(/(?<first>.(\d))/su);
-        expect(cre`1: any, two: digit, 3: word-char`).toStrictEqual(/(.)(?<two>\d)(\w)/su);
-    });
-});*/
