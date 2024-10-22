@@ -338,6 +338,11 @@ Resolving values inside a cycle (group):
    (no need to go back to starting point, success can be reached at any point since unchaned value at any point of path
    indicates that the rest must be valid)
 8. Increase interation counter on each full circle around the path, fail if it reached limit.
+
+PROBLEMS:
+  - SET_CONFIG("CONFIG_{CONFIG_MY_UART}_DRIVER_ENABLE = TRUE") - this kind of expression reorganizes the graph if CONFIG_MY_UART changes,
+    this kind of cases in not ensured in algorithm above
+  - Resource manager may also reorganize the graph and may causing cyclic dependencies
 */
 
 
