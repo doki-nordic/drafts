@@ -1,0 +1,158 @@
+
+
+import os
+import json
+import yaml
+import re
+import itertools
+from pathlib import Path
+from threading import Thread
+import io
+import sys
+import shutil
+import webbrowser
+from textwrap import dedent
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import concurrent.futures
+
+json_data = b''
+
+root = Path(__file__).parent.parent
+
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+def get_json_data():
+
+    global json_data
+
+    def extract_parts(text: 'str|list[str]') -> 'list[str]':
+        if isinstance(text, str):
+            return [ x.strip() for x in re.split(r'(?:[\r\n \t]|,|;)+', text.strip()) ]
+        else:
+            return list(itertools.chain.from_iterable(extract_parts(x) for x in text))
+
+    samples = []
+
+    for f in root.glob('**/sample.y*ml'):
+        try:
+            data = yaml.load(f.read_text(), yaml.FullLoader)
+            fileName = str(f.relative_to(root))
+            name = fileName
+            desc = ''
+            common = {}
+            tags = set()
+            tests = []
+
+            if 'sample' in data:
+                sampleInfo = data['sample']
+                if 'name' in sampleInfo:
+                    name = sampleInfo['name']
+                if 'description' in sampleInfo:
+                    desc = re.sub(r'[\r\n \t]+', ' ', sampleInfo['description']).strip()
+
+            if 'common' in data:
+                common = data['common']
+
+            if 'tests' in data:
+                testsObj = data['tests']
+                if isinstance(data['tests'], list):
+                    testsObj = {}
+                    for t in data['tests']:
+                        testsObj = {**testsObj, **t}
+            else:
+                testsObj = {}
+
+            for testName, testData in testsObj.items():
+                testData = {**common, **testData}
+                platforms = set()
+                supported = set()
+                unsupported = set()
+                if 'tags' in testData:
+                    tags.update(extract_parts(testData['tags']))
+                if 'integration_platforms' in testData:
+                    platforms = set(extract_parts(testData['integration_platforms']))
+                if 'platform_allow' in testData:
+                    supported = set(extract_parts(testData['platform_allow']))
+                if 'platform_exclude' in testData:
+                    unsupported = set(extract_parts(testData['platform_exclude']))
+                platforms = platforms - unsupported
+                supported = supported - platforms - unsupported
+                test = { 'name': testName }
+                if len(platforms): test['platforms'] = list(platforms)
+                if len(supported): test['supported'] = list(supported)
+                if len(unsupported): test['unsupported'] = list(unsupported)
+                tests.append(test)
+            sample = {
+                'file': fileName,
+                'name': name,
+                'tests': tests,
+            }
+            if len(desc): sample['desc'] = desc
+            if len(tags): sample['tags'] = list(tags)
+            samples.append(sample)
+
+            #print(f'{fileName}: {name} - {desc} - {" ".join(tags)}')
+        except Exception as e:
+            print(f"Error processing {f}: {e}")
+            raise
+
+    json_data = json.dumps(samples, indent='  ').encode('utf8')
+
+
+class MyHTTPRequestHandler(SimpleHTTPRequestHandler):
+
+    def __init__(self, *args, **kwargs):
+        self._modify_html = False
+        super().__init__(*args, directory=str(Path(__file__).parent), **kwargs)
+
+    def do_GET(self, *args, **kwargs):
+        global json_data
+        if (self.path.startswith('/?reload')):
+            json_data = b''
+            executor.submit(get_json_data)
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-length', '0')
+            self.end_headers()
+        elif (self.path.startswith('/?get')):
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Content-length', str(len(json_data)))
+            self.end_headers()
+            self.wfile.write(json_data)
+            return
+        elif (self.path.startswith('/?set=')):
+            pass
+        # if (self.path.endswith('.html') or (self.path.find('.html?') > 0) or
+        #     self.path.endswith('.htm') or (self.path.find('.htm?') > 0)):
+        #     try:
+        #         self._modify_html = True
+        #         old = self.wfile
+        #         self.wfile = io.BytesIO()
+        #         res = super().do_GET(*args, **kwargs)
+        #         buf = self.wfile.getbuffer().tobytes()
+        #         buf = buf.replace(b'</body>', auto_reload_source + b'</body>')
+        #         old.write(buf)
+        #         return res
+        #     finally:
+        #         self._modify_html = False
+        # else:
+        return super().do_GET(*args, **kwargs)
+
+    # def send_header(self, keyword, value):
+    #     global auto_reload_source
+    #     if self._modify_html and (keyword.lower() == 'content-length'):
+    #         value = str(int(value) + len(auto_reload_source))
+    #     return super().send_header(keyword, value)
+
+    def log_message(self, format, *args, **kwargs):
+        pass
+
+def main():
+    executor.submit(get_json_data)
+    with HTTPServer(('localhost', 8096), MyHTTPRequestHandler) as server:
+        webbrowser.open(f'http://localhost:{server.server_port}/')
+        server.serve_forever()
+
+if __name__ == '__main__':
+    exit(main() or 0)

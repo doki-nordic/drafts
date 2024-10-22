@@ -1,0 +1,8 @@
+/node_modules/
+/dist/web-meta.json
+/dist/_root
+__pycache__
+/config.json
+/config.*.json
+/package-lock.json
+/dist/
