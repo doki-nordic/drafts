@@ -343,6 +343,11 @@ PROBLEMS:
   - SET_CONFIG("CONFIG_{CONFIG_MY_UART}_DRIVER_ENABLE = TRUE") - this kind of expression reorganizes the graph if CONFIG_MY_UART changes,
     this kind of cases in not ensured in algorithm above
   - Resource manager may also reorganize the graph and may causing cyclic dependencies
+SOLUTION:
+  - resolve all except unbounded constrains e.g. SET_CONFIG(CONFIG_{CONFIG_MY_UART}_DRIVER_ENABLE = TRUE)
+  - add constrains
+  - resolve all
+  - repeat if cofigs used inside unbounded constrains are changed.
 */
 
 
