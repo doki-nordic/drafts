@@ -348,8 +348,43 @@ SOLUTION:
   - add constrains
   - resolve all
   - repeat if cofigs used inside unbounded constrains are changed.
+
+DIFFERENT APPROACH (much simpler, but not so fast):
+
+0. Do normal preprocessing (don't even parse body of un-fullfilled #if)
+   - assume last kown value for each configuration option (undefined if unknown)
+   - keep config dependencies for a file (only those references that affects pre-build stage)
+   - enumerator regexp must be also kept to test if specific option changes the enumerator
+     (only if macro affects pre-build stage)
+1. If some configuration option changes its value (or becomes defined) all files that reference this option are set as "dirty"
+   - including current file if it was referenced before in the same file
+   - the same file but from different image is threaded seperatly
+   - each option has list of files that defines it, if it is empty, option becomes undefined.
+2. "Dirty" files are pushed to a FIFO and then re-parsed
+3. Prebuild parsing is done when there is nothing in the FIFO.
+4. If file was parsed mutiple times, errors and warnings only from the last parse are shown.
+5. Limit number of files pushed to FIFO relative to total files, i.e. trigger error if number_of_files_pushed > limit * number_of_files.
+
+Pros:
+  - no need for special way to parse #if
+  - no graph building, resolving, e.t.c.
+  - no need for complicated algorithms
+Cons:
+  - slower
+  - undefined options are unknown (e.g. cannot be shown in the GUI)
+  - maybe some problems in doxygen parsing
+  - harder to findout which options caused infinite (or too long) cycle
 */
 
+/* Note on enumerator:
+Enumerator should also be enumarated and evaluated in pre-build stage, so this should work:
+*/
+
+#define FOO_ENUM_MACRO(name) \
+	DEFINE_CONFIG(CONFIG_BAR_{name} = CONFIG_FOO_{name})
+	ENSURE_CONFIG(CONFIG_BAR_{name} > 0)
+
+ENUMERATE_CONFIG("CONFIG_FOO_(.*)", FOO_ENUM_MACRO, foo_enumarator)
 
 /*
 It would be nice to have option to disable specific files from being parsed by config-tool.
