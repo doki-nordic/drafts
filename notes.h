@@ -403,3 +403,24 @@ In general. the priority should be:
 5. DEFAULT_CONFIG          - override default from definition, error if multiple default values that mets all of above conditions
 6. default from definition - error if multiple default values that mets all of above conditions and not overriden by DEFAULT_CONFIG
 */
+
+
+// Example of device driver configuration
+
+#define UARTE_DRIVER(prefix) \
+	DEFINE_CONFIG({prefix}_DEVICE = RESOURCE_ALLOC(UARTE, {prefix}_RX_PIN in {i}_RX_PINS && {prefix}_TX_PIN in {i}_TX_PINS)) \
+        DEFINE_CONFIG({prefix}_BAUDRATE, int) \
+	ENSURE_CONFIG({{prefix}_DEVICE}_BAUDRATE = {prefix}_BAUDRATE)
+
+
+UARTE_DRIVER(CONFIG_MY_PORT)
+SET_CONFIG(CONFIG_MY_PORT_RX_PIN = GPIO_PIN_0_10)
+SET_CONFIG(CONFIG_MY_PORT_TX_PIN = GPIO_PIN_0_12)
+SET_CONFIG(CONFIG_MY_PORT_BAUDRATE = 115200)
+SET_CONFIG(CONFIG_MY_PORT_DATA_BITS = 8)
+SET_CONFIG(CONFIG_MY_PORT_PARITY = UARTE_PARITY_NONE)
+
+// SET_CONFIG(CONFIG_MY_PORT_DEVICE = CONFIG_UARTE120) - optional if using specific
+// RESOURCE_RESERVE(UARTE, CONFIG_UARTE120)              instance for this driver.
+
+static const UarteInstance* my_port = CONFIG_MY_PORT_INSTANCE;
