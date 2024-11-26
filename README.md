@@ -134,6 +134,18 @@ TEMPLATE_CONFIG(CONFIG_UART2, CONFIG_UARTn);
 ENSURE_CONFIG(CONFIG_UART2_LIMITED_FUNCTIONALITY == 1, "The UART2 on nRF... chip does not support ....");
 ```
 
+#### Different approach for configuration templates
+```c
+#define TEMPLATE_CONFIG_UARTn(num) \
+     DEFINE_CONFIG(COMMON_CONFIG_UART{num}_ENABLED = 0) \
+     DEFINE_CONFIG(COMMON_CONFIG_UART{num}_BAUDRATE = 115200) \
+     DEFINE_CONFIG(COMMON_CONFIG_UART{num}_CORE = CORE_APP) \
+TEMPLATE_CONFIG_UARTn(0);
+TEMPLATE_CONFIG_UARTn(1);
+TEMPLATE_CONFIG_UARTn(2);
+ENSURE_CONFIG(CONFIG_UART2_LIMITED_FUNCTIONALITY == 1, "The UART2 on nRF... chip does not support ....");
+```
+
 ### Enumerating configuration options
 
 ```c
