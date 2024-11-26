@@ -374,6 +374,15 @@ Cons:
   - undefined options are unknown (e.g. cannot be shown in the GUI)
   - maybe some problems in doxygen parsing
   - harder to findout which options caused infinite (or too long) cycle
+
+With this approach, resource manager:
+- RESOURCE_ALLOC evaluates condition on all items and selects first one
+- keep list of allowed items associated with config option
+- if RESOURCE_ALLOC fails to allocate:
+  1) if there is not enough items: fail,
+  2) otherwise, try to move other accosiation based on list of allowed items
+     and make file that allocated it "dirty" to recheck the condition, list of allowed items is rotated to check different posibilities
+- if RESOURCE_ALLOC re-evaluates, the list is updated, but not re-created to maitain order.
 */
 
 /* Note on enumerator:
