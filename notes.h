@@ -383,6 +383,14 @@ With this approach, resource manager:
   2) otherwise, try to move other accosiation based on list of allowed items
      and make file that allocated it "dirty" to recheck the condition, list of allowed items is rotated to check different posibilities
 - if RESOURCE_ALLOC re-evaluates, the list is updated, but not re-created to maitain order.
+
+Optimizations:
+     - Caching:
+	 - Parsed file should be cached
+	 - Cache key is hash with all used inputs (config options, defines), file modification time, size (and maybe some other file attributes)
+	 - If file was parsed multiple times all parse results should be kept
+     - Header files shouldn't be parsed separetly (only using #include)
+     - If all content affecting pre-build in file is encosed in single #if, it becomes conditional file
 */
 
 /* Note on enumerator:
