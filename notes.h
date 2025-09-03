@@ -391,7 +391,18 @@ Optimizations:
 	 - If file was parsed multiple times all parse results should be kept
      - Header files shouldn't be parsed separetly (only using #include)
      - If all content affecting pre-build in file is encosed in single #if, it becomes conditional file
+
 */
+
+// example of heap resource manager
+// in heap module
+#if CONF_HEAP_SIZE_CHECK
+RESOURCE_DEFINE_MEMORY(HEAP, CONF_HEAP_SIZE)
+#else
+RESOURCE_DEFINE_MEMORY(HEAP, 0x7FFFFFFF)
+#endif
+// in other modules
+RESOURCE_ALLOC(HEAP, 4096)
 
 /* Note on enumerator:
 Enumerator should also be enumarated and evaluated in pre-build stage, so this should work:
@@ -476,3 +487,20 @@ SET_CONFIG(CONFIG_MY_PORT_PARITY = UARTE_PARITY_NONE)
 // RESOURCE_RESERVE(UARTE, CONFIG_UARTE120)              instance for this driver.
 
 static const UarteInstance* my_port = CONFIG_MY_PORT_INSTANCE;
+
+
+/*
+
+API symbols summary:
+
+CONF_*** - current image configurations options
+***_CONF_*** - other image configuration options (image names cannot have undescore)
+***_CONF() - special configuration macros
+    TARGET_CONF(...) - target configuration
+    SET_CONF(...) - set option
+    ENSURE_CONF(...) - ensure configuration condition
+    PREFFER_CONF(...) - preffered configuration condition
+	DEFAULT_CONF(...) - set default configuration value
+...
+
+*/
