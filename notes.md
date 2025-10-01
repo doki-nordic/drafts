@@ -10,6 +10,18 @@ Docs:
  * https://github.com/wireshark/wireshark/blob/master/doc/extcap_example.py
  * https://tshark.dev/capture/sources/extcap_interfaces/
 
+# Idea for install procedure with nRF Connect SDK
+
+* Unify with ESB sniffer
+* Create install script: `python3 scripts/wireshark/install.py` that:
+  * Create virutal environment in extcap directory if needed (or recreate)
+  * Update requirements in this venv
+  * Create wrapper script (and .bat in Windows) that:
+    * calls the original plugin file from the repository directory
+    * if the file was deleted it returns dummy plugin that shows error message about that and what to do next
+
+# --- OLD ---
+
 # Ideas for help
 
 ## Logging
