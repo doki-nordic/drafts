@@ -14,6 +14,7 @@ Docs:
 
 * Unify with ESB sniffer
 * Create install script: `python3 scripts/wireshark/install.py` that:
+  * Checks for `JLinkLogger` executable avability. Ask user to provide path if not detected.
   * Tries to detect user's extcap directory, if available asks user if he want to install here.
     It should also inform user how to veify those paths in Wireshark. If not detected or user want a different path, asks
     user with information how to get the path from Wireshark configuration dialog window.
@@ -21,6 +22,10 @@ Docs:
   * Update requirements in this venv
   * Create wrapper script (and .bat in Windows) that:
     * calls the original plugin file from the repository directory
+    * contains `JLinkLogger` executable path and sets to `SEGGER_JLINK_LOGGER_EXE_PATH` or `SEGGER_JLINK_LOGGER_EXE_PATH_FORCED`
+      env variables before calling original script.
+      * If it was available in PATH during installation: use `SEGGER_JLINK_LOGGER_EXE_PATH` that will use `PATH` first.
+      * If it was provided by user: use `SEGGER_JLINK_LOGGER_EXE_PATH_FORCED` that will use this var first and `PATH` if not available there.
     * uses the same python interpreter as it was called (written in shebang `#!`)
     * if the file was deleted it returns dummy plugin that shows error message about that and what to do next
 
