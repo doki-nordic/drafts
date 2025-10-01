@@ -301,7 +301,7 @@ LOG_OUTPUT_DEFINE(monitor_log_output, monitor_log_out, &buf, 1);
 static inline uint8_t monitor_priority_get(uint8_t log_level)
 {
 	static const uint8_t prios[] = {
-		[LOG_LEVEL_NONE]  = BT_LOG_NOTICE,
+		[LOG_LEVEL_NONE]  = BT_LOG_NOTICE, // doki-nordic: this log level is used for printk (need to be verified in newest release), so we should not use 0 (Emergency)
 		[LOG_LEVEL_ERR]   = BT_LOG_ERR,
 		[LOG_LEVEL_WRN]   = BT_LOG_WARN,
 		[LOG_LEVEL_INF]   = BT_LOG_INFO,
@@ -312,7 +312,7 @@ static inline uint8_t monitor_priority_get(uint8_t log_level)
 		return prios[log_level];
 	}
 
-	return BT_LOG_EMERG;
+	return BT_LOG_EMERG; // doki-nordic: this should never happed, so return Emergency just in case
 }
 
 static void monitor_log_process(const struct log_backend *const backend,
