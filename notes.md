@@ -29,6 +29,12 @@ Docs:
     * uses the same python interpreter as it was called (written in shebang `#!`)
     * if the file was deleted it returns dummy plugin that shows error message about that and what to do next
 
+Note: We need to provide version information to Wireshark, so it may be like that:
+1. List all files from `doc/nrf/releases_and_maturity/releases/release-notes-*.*.*.rst` and keep the highest number
+2. Read first 10 lines of `doc/nrf/releases_and_maturity/releases/release-notes-changelog.rst` and seard for
+   `v[0-9]+\.[0-9]+\.[0-9]+` pattern and keep the highest number.
+3. Use the highest number.
+
 # --- OLD ---
 
 # Ideas for help
