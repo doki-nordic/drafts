@@ -14,10 +14,14 @@ Docs:
 
 * Unify with ESB sniffer
 * Create install script: `python3 scripts/wireshark/install.py` that:
-  * Create virutal environment in extcap directory if needed (or recreate)
+  * Tries to detect user's extcap directory, if available asks user if he want to install here.
+    It should also inform user how to veify those paths in Wireshark. If not detected or user want a different path, asks
+    user with information how to get the path from Wireshark configuration dialog window.
+  * Create virutal environment in extcap directory (or recreate)
   * Update requirements in this venv
   * Create wrapper script (and .bat in Windows) that:
     * calls the original plugin file from the repository directory
+    * uses the same python interpreter as it was called (written in shebang `#!`)
     * if the file was deleted it returns dummy plugin that shows error message about that and what to do next
 
 # --- OLD ---
