@@ -248,3 +248,73 @@ INCLUDE_CONFIG("../../project_files/linker_script.ld"); // Add file as a configu
 
 > with drivers: `UART_DRIVER(my_instance);`
 
+
+
+# Draft of startup tutorial
+
+## Preparation
+
+Download SDK package and unpack it.
+Avoid spaces in the path where you unpack the SDK.
+
+Navigate to the SDK folder and run `Run_Me_First` application from
+the root directory. This will show you a GUI application that will
+help you start.
+
+If you don't have Segger J-Link drivers installed on your system,
+the application will prompt you to install them.
+Follow the instructions to complete the installation.
+
+## Your first project
+
+Create a new directory for your project.
+Place there `src/hello_world.c` source file with standard "Hello, World!" code. For example:
+
+```c
+#include <stdio.h>
+
+int main() {
+    printf("Hello, World!\n");
+    return 0;
+}
+```
+
+With `Run_Me_First` application, you can create a new project by selecting "New Project" and specifying:
+ - the path to your project directory,
+ - the glob pattern for source files, in our case `src/*.c`,
+ - the default C file that contains configuration.
+   We will not use separate configuration file, so in our case it is `src/hello_world.c`.
+
+In the next step, select:
+ - Target board.
+ - "Logging and terminal" option to enable `printf` output to the terminal.
+ - If you are using Visual Studio Code, select "VSCode support files" option to generate
+   additional files for VSCode project to build, flash and debug your application from IDE.
+
+Click "Create". It will generate a files needed to build your project.
+By default, the project will use `make` as a build system.
+
+It will also add necessary configuration options to your `src/hello_world.c` file.
+
+## Build and flash (terminal)
+
+With `Run_Me_First` application, run terminal. The terminal will already have environment
+prepared for current SDK.
+
+Change directory to your project directory.
+
+Type `make` to build your project. If everything is set up correctly, it will compile your code and generate a binary file.
+
+Type `make flash` to flash the binary to your target board.
+
+## Build and flash (VSCode)
+
+Open your project folder in Visual Studio Code.
+Press `Ctrl+Shift+B` to build your project. If everything is set up correctly, it will compile your code and generate a binary file.
+
+Open "Run and Debug" tab, select "Flash (no debug)" configuration and press `F5` to flash the binary to your target board.
+
+## Verification
+
+Connect to serial port of the board using a terminal application (like `minicom`, `putty`, or `screen`) to see the output of your program.
+
