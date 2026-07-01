@@ -353,6 +353,9 @@ DIFFERENT APPROACH (much simpler, but not so fast):
 
 0. Do normal preprocessing (don't even parse body of un-fullfilled #if)
    - assume last kown value for each configuration option (undefined if unknown)
+     - this can be problematic - it will cause undeterministic results, first run sets some values, but initial state of the second
+	   run is different, so it may end up with different values. Solution: always start with undefined values, but use cache to
+	   avoid pre-build process if possible - see optimizations below.
    - keep config dependencies for a file (only those references that affects pre-build stage)
    - enumerator regexp must be also kept to test if specific option changes the enumerator
      (only if macro affects pre-build stage)
@@ -391,6 +394,11 @@ Optimizations:
 	 - If file was parsed multiple times all parse results should be kept
      - Header files shouldn't be parsed separetly (only using #include)
      - If all content affecting pre-build in file is encosed in single #if, it becomes conditional file
+	 - If no file was changed, do not run pre-build process
+	 - If some files were changed, evaluates them with current config values
+	   - if the result is the same as cache - the changes does not affect pre-build stage, so do not run pre-build process
+	   - if the result is different than cahced - the changes may affext pre-build stage, so re-run pre-build process
+	     from the beginning to ensure deterministic results. Use cache to reduce parsing time.
 
 */
 
