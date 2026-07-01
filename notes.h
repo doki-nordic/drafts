@@ -389,15 +389,15 @@ With this approach, resource manager:
 
 Optimizations:
      - Caching:
-	 - Parsed file should be cached
-	 - Cache key is hash with all used inputs (config options, defines), file modification time, size (and maybe some other file attributes)
-	 - If file was parsed multiple times all parse results should be kept
+     - Parsed file should be cached
+     - Cache key is hash with all used inputs (config options, defines), file modification time, size (and maybe some other file attributes)
+     - If file was parsed multiple times all parse results should be kept
      - Header files shouldn't be parsed separetly (only using #include)
      - If all content affecting pre-build in file is encosed in single #if, it becomes conditional file
-	 - If no file was changed, do not run pre-build process
-	 - If some files were changed, evaluates them with current config values
-	   - if the result is the same as cache - the changes does not affect pre-build stage, so do not run pre-build process
-	   - if the result is different than cahced - the changes may affext pre-build stage, so re-run pre-build process
+     - If no file was changed, do not run pre-build process
+     - If some files were changed, evaluates them with current config values
+       - if the result is the same as cache - the changes does not affect pre-build stage, so do not run pre-build process
+       - if the result is different than cahced - the changes may affext pre-build stage, so re-run pre-build process
 	     from the beginning to ensure deterministic results. Use cache to reduce parsing time.
 
 */
