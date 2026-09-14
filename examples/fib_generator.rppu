@@ -1,0 +1,34 @@
+
+
+// Fibonacci sequence generator software peripheral
+// Argument: r0 - output vector pointer:
+//   uint32_t buffer
+//   uint32_t words_count
+
+
+job_0_entry:
+	IN r1, r0 + 4
+	INADDR r0 // load buffer address asynchronously to speed up startup
+
+// Generate Fibonacci sequence: to main memory address r0, up to r1 elements
+fib:
+	LD r2, #0
+	LD r3, #1
+	INGET r0
+loop_fib:
+	CMP r1, r1
+	LD r4, #1
+	BRZ end_fib
+	SUB r1, r4
+	MOV r4, r2
+	MOV r2, r3
+	ADD r3, r4
+	LD r4, #4
+	OUT r2, r0
+	BR loop_fib
+	ADD r0, r4
+end_fib:
+	IOFENCE // Make sure all number are written to main memory
+	TRIGGER 0 // TRIGGER event that signals the completion of the Fibonacci sequence generation
+	EXIT
+	NOP
