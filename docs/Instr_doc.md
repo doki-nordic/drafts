@@ -1,8 +1,6 @@
 
 # Instruction Set Summary
 
-**16-BIT ARCHITECTURE**
-
 | Instruction | Operands | Description | Details |
 |-------------|-------------|-------------|---------|
 |  |  | **Arithmetic and Logic Instructions** |
@@ -46,28 +44,34 @@
 | BRSLT | label | Branch if signed less than | [Branch operations](#branch-operations)
 | BRN | label | Branch if negative | [Branch operations](#branch-operations)
 |  |  | **Data Memory Instructions** |
-| LD | rD, addr | Load from memory 16-bit value | [Data memory operations](#data-memory-operations)
 | LD8 | rD, addr | Load from memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
 | LDS8 | rD, addr | Load from memory signed 8-bit value | [Data memory operations](#data-memory-operations)
-| ST | rD, addr | Store to memory 16-bit value | [Data memory operations](#data-memory-operations)
+| LD16 | rD, addr | Load from memory unsigned 16-bit value | [Data memory operations](#data-memory-operations)
+| LDS16 | rD, addr | Load from memory signed 16-bit value | [Data memory operations](#data-memory-operations)
+| LD32 `32` | rD, addr | Load from memory unsigned 32-bit value | [Data memory operations](#data-memory-operations)
 | ST8 | rD, addr | Store to memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
-| LDI | rD, rS + offset | Load from memory 16-bit value | [Data memory operations](#data-memory-operations)
-| LDI8 | rD, rS + offset | Load from memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
-| LDIS8 | rD, rS + offset | Load from memory signed 8-bit value | [Data memory operations](#data-memory-operations)
-| STI | rD, rS + offset | Store to memory 16-bit value | [Data memory operations](#data-memory-operations)
-| STI8 | rD, rS + offset | Store to memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
+| ST16 | rD, addr | Store to memory unsigned 16-bit value | [Data memory operations](#data-memory-operations)
+| ST32 `32` | rD, addr | Store to memory unsigned 32-bit value | [Data memory operations](#data-memory-operations)
+| LDI8 | rD, rS + addr | Load from memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
+| LDIS8 | rD, rS + addr | Load from memory signed 8-bit value | [Data memory operations](#data-memory-operations)
+| LDI16 | rD, rS + addr | Load from memory unsigned 16-bit value | [Data memory operations](#data-memory-operations)
+| LDIS16 | rD, rS + addr | Load from memory signed 16-bit value | [Data memory operations](#data-memory-operations)
+| LDI32 `32` | rD, rS + addr | Load from memory unsigned 32-bit value | [Data memory operations](#data-memory-operations)
+| STI8 | rD, rS + addr | Store to memory unsigned 8-bit value | [Data memory operations](#data-memory-operations)
+| STI16 | rD, rS + addr | Store to memory unsigned 16-bit value | [Data memory operations](#data-memory-operations)
+| STI32 `32` | rD, rS + addr | Store to memory unsigned 32-bit value | [Data memory operations](#data-memory-operations)
 |  |  | **External IO Instructions** |
-| OUT8 | r0, rS:rD + offset | Store to IO 8-bit register | [IO operations](#io-operations)
-| OUT16 | r0, rS:rD + offset | Store to IO 16-bit register | [IO operations](#io-operations)
-| OUT32 | r1:r0, rS:rD + offset | Store to IO 32-bit register | [IO operations](#io-operations)
-| IN8 | rD, rS:rD + offset | Load from IO 8-bit register | [IO operations](#io-operations)
-| IN16 | rD, rS:rD + offset | Load from IO 16-bit register | [IO operations](#io-operations)
-| IN32 | rD, rS:rD + offset | Load from IO 32-bit register | [IO operations](#io-operations)
-| INADDR8 | rS:rD + offset | Prepare fetch from IO 8-bit register | [IO operations](#io-operations)
-| INADDR16 | rS:rD + offset | Prepare fetch from IO 16-bit register | [IO operations](#io-operations)
-| INADDR32 | rS:rD + offset | Prepare fetch from IO 32-bit register | [IO operations](#io-operations)
+| OUT8 | r0, rS:rD + offset `16` <br/> rD, rS + offset `32` | Store to IO 8-bit register | [IO operations](#io-operations)
+| OUT16 | r0, rS:rD + offset `16` <br/> rD, rS + offset `32` | Store to IO 16-bit register | [IO operations](#io-operations)
+| OUT32 | r1:r0, rS:rD + offset `16` <br/> rD, rS + offset `32` | Store to IO 32-bit register | [IO operations](#io-operations)
+| IN8 | rD, rS:rD + offset `16` <br/> rD, rS + offset `32` | Load from IO 8-bit register | [IO operations](#io-operations)
+| IN16 | rD, rS:rD + offset `16` <br/> rD, rS + offset `32` | Load from IO 16-bit register | [IO operations](#io-operations)
+| IN32 | rD, rS:rD + offset `16` <br/> rD, rS + offset `32` | Load from IO 32-bit register | [IO operations](#io-operations)
+| INADDR8 | rS:rD + offset `16` <br/> rS + offset `32` | Prepare fetch from IO 8-bit register | [IO operations](#io-operations)
+| INADDR16 | rS:rD + offset `16` <br/> rS + offset `32` | Prepare fetch from IO 16-bit register | [IO operations](#io-operations)
+| INADDR32 | rS:rD + offset `16` <br/> rS + offset `32` | Prepare fetch from IO 32-bit register | [IO operations](#io-operations)
 | INDATA | rD | Load from fetched register | [IO operations](#io-operations)
-| INDATAHI | rD | Load higher bits from fetched 32-bit register | [IO operations](#io-operations)
+| INDATAHI `16` | rD | Load higher bits from fetched 32-bit register | [IO operations](#io-operations)
 | IOFENCE |  | IO fence operation | [IO operations](#io-operations)
 |  |  | **Internal IO Instructions** |
 | INI | rD, address | Load from internal IO register | [IO operations](#io-operations)
@@ -80,15 +84,8 @@
 |  |  | **Miscellaneous Instructions** |
 | NOP |  | No operation | [Job operations](#job-operations)
 
-
-**32-BIT ARCHITECTURE DIFFERENCES**
-
-* LD16, LDS16, LDI16, LDIS16, ST16, STI16 instructions added.
-* IO instructions operands changed:
-  * IN/OUT8/16/32 rD, rS + offset
-  * INADDR8/16/32 rS + offset
-* INDATAHI removed.
-
+* `16` - 16-bit CPU architecture only
+* `32` - 32-bit CPU architecture only
 
 **TODO:** Consider IN8/16/32 destination register to be r0 for consistency with OUT instructions.
           Con: it requires more wiring and may not actually give a significant benefit.
@@ -244,16 +241,19 @@ Where `offset` is relative to the current program counter (PC) and specifies the
 
 | Instruction | Operations | `C` | `Z` | `N`  | Opcode |
 |-------------|-------------|-------------|-------------|-------------|---------|
-| SUB  | `R = rD - rS`, `rD = R`      | R[16] | R[0:15] == 0 | R[15] | 0000
-| SUBC | `R = rD - rS - C`, `rD = R`  | R[16] | (R[0:15] == 0) && Z | R[15] | 0001
-| ADD  | `R = rD + rS`, `rD = R`      | R[16] | R[0:15] == 0 | R[15] | 0010
-| ADDC | `R = rD + rS + C`, `rD = R`  | R[16] | (R[0:15] == 0) && Z | R[15] | 0011
-| AND  | `R = rD & rS`, `rD = R`      | - | R == 0 | R[15] | 0100
-| OR   | `R = rD \| rS`, `rD = R`      | - | R == 0 | R[15] | 0101
-| XOR  | `R = rD ^ rS`, `rD = R`      | - | R == 0 | R[15] | 0110
-| MUL  | `R = rD * rS`, `rD = R` | - | R == 0 | R[15] | 0111
-| CMP  | `R = rD - rS`              | R[16]      | R[0:15] == 0 | R[15] | 1000
-| CMPC | `R = rD - rS - C`          | R[16] | (R[0:15] == 0) && Z | R[15] | 1001
+| SUB  | `R = rD - rS`, `rD = R`      | R[M + 1] | R[0:M] == 0 | R[M] | 0000
+| SUBC | `R = rD - rS - C`, `rD = R`  | R[M + 1] | (R[0:M] == 0) && Z | R[M] | 0001
+| ADD  | `R = rD + rS`, `rD = R`      | R[M + 1] | R[0:M] == 0 | R[M] | 0010
+| ADDC | `R = rD + rS + C`, `rD = R`  | R[M + 1] | (R[0:M] == 0) && Z | R[M] | 0011
+| AND  | `R = rD & rS`, `rD = R`      | - | R == 0 | R[M] | 0100
+| OR   | `R = rD \| rS`, `rD = R`      | - | R == 0 | R[M] | 0101
+| XOR  | `R = rD ^ rS`, `rD = R`      | - | R == 0 | R[M] | 0110
+| MUL  | `R = rD * rS`, `rD = R` | - | R == 0 | R[M] | 0111
+| CMP  | `R = rD - rS`              | R[M + 1]      | R[0:M] == 0 | R[M] | 1000
+| CMPC | `R = rD - rS - C`          | R[M + 1] | (R[0:M] == 0) && Z | R[M] | 1001
+
+* `M = 31` for 32-bit CPU
+* `M = 15` for 16-bit CPU
 
 
 ### Encoding
@@ -268,10 +268,16 @@ Where `offset` is relative to the current program counter (PC) and specifies the
 
 | Instruction | Operations | `C` | `Z` | `N`  | Opcode |
 |-------------|-------------|-------------|-------------|-------------|---------|
-| NOT  | `R = ~rS`, `rD = R`      | - | R == 0 | R[15] | 1010
-| NEG  | `R = 0 - rS`, `rD = R`  | R[16] | R[0:15] == 0 | R[15] | 1011
-| SIGN8 | `R[0:7] = rS[0:7]`, `R[8:15] = repeat rS[7]`, `rD = R`   | - | R == 0 | R[15] | 1100
-| SIGN16 | `R = repeat rS[15]`, `rD = R`   | - | R == 0 | R[15] | 1101
+| NOT  | `R = ~rS`, `rD = R`      | - | R == 0 | R[M] | 1010
+| NEG  | `R = 0 - rS`, `rD = R`  | R[M] | R[0:M] == 0 | R[M] | 1011
+| SIGN8 | `R[0:7] = rS[0:7]`, `R[8:M] = repeat rS[7]`, `rD = R`   | - | R == 0 | R[M] | 1100
+| SIGN16 (16-bit CPU) | `R = repeat rS[15]`, `rD = R`   | - | R == 0 | R[M] | 1101
+| SIGN16 (32-bit CPU) | `R[0:15] = rS[0:15]`, `R[16:M] = repeat rS[15]`, `rD = R`   | - | R == 0 | R[M] | 1101
+
+* `M = 31` for 32-bit CPU
+* `M = 15` for 16-bit CPU
+
+
 
 ### Encoding
 
