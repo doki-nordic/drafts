@@ -16,8 +16,9 @@
 | CMPC | rD, rS | Compare with carry | [ALU binary operations](#alu-binary-operations)
 | NOT | rD, rS | Bitwise NOT | [ALU unary operations](#alu-unary-operations)
 | NEG | rD, rS | Negation | [ALU unary operations](#alu-unary-operations)
-| SIGN8 | rD, rS | Sign extend 8-bit to CPU bit width | [ALU unary operations](#alu-unary-operations)
-| SIGN16 | rD, rS | Sign extend 16-bit to 32-bit value | [ALU unary operations](#alu-unary-operations)
+| SEXT8 | rD, rS | Sign extend 8-bit to CPU bit width | [ALU unary operations](#alu-unary-operations)
+| SEXT16 `32` | rD, rS | Sign extend 16-bit to CPU bit width | [ALU unary operations](#alu-unary-operations)
+| SIGN | rD, rS | Get value sign | [ALU unary operations](#alu-unary-operations)
 |  |  | **Data Movement Instructions** |
 | MOV | rD, rS | Move data | [Data movement operations](#data-movement-operations)
 | LI | rD, value | Load immediate 8-bit value | [Data movement operations](#data-movement-operations)
