@@ -123,6 +123,12 @@
           Con: Bigger design complexity.
           After initial consideration: Do experiments and decide based on the results.
 
+**TODO:** Consider adding immediate shift values to shift instructions.
+          Pro: Useful for bit operations.
+          Pro: SIGN instruction can be replaced by `MOV rD, rS; SHRS rD, CPU_BITS - 1`.
+          Con: Bigger instruction decoder and may be problematic to fit into 16-bit instruction.
+          After initial consideration: Try to fit into 16-bit instrucion encoding and decide based on the results.
+
 # Instruction Set
 
 ## ADD
